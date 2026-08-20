@@ -439,6 +439,7 @@ def build_webdataset_loader(
 
     dataset = (
         wds.WebDataset(shard_urls, shardshuffle=True, nodesplitter=nodesplitter, seed=seed)
+        .repeat()
         .shuffle(shuffle_buffer)
         .decode("pil", handler=wds.warn_and_continue)
         .map(WebDatasetImageTransform(transform))
