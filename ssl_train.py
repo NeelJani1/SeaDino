@@ -106,13 +106,36 @@ Alignment status vs official facebookresearch/dinov3 (main @ 6876159, 2026-07-15
      SSL with. (This was originally flagged early in this file's review history
      but never actually applied across the subsequent rounds of fixes -- fixed
      now.)
-  🔧 official_dinov3_aug: documented (docstring + runtime warning) that the
-     fixed local_crops_size=112 only pairs correctly with image_size=256 --
-     official's real global_crops_size for pretrain/gram_anchor. Running this
-     flag at other --image_size values (e.g. this script's own 224 default)
-     doesn't correspond to any single real recipe's crop-size pairing; still a
-     reasonable ablation, just not an official-parity baseline unless paired
-     with --image_size 256.
+  🔧 local_crop_size is now a single, unified control point across ALL THREE
+     augmentation paths (official_dinov3_aug, marine_aug, default), instead of
+     official_dinov3_aug silently ignoring it and hardcoding 112. Default is
+     now 96px everywhere when --local_crop_size is omitted -- this is a
+     DELIBERATE DEVIATION from official's real local_crops_size (112, paired
+     with global=256 in pretrain/gram_anchor) in exchange for one predictable
+     default across every ablation arm, so augmentation-pipeline comparisons
+     (marine_aug vs official_dinov3_aug vs default) are automatically
+     apples-to-apples on crop footprint unless you deliberately vary it. For a
+     genuine official-parity baseline run, pass --local_crop_size 112
+     --global_crop_size 256 explicitly -- both official_dinov3_aug's own docstring
+     and the runtime warning below spell this out.
+  🔧 image_size / global_crop_size split. The former --image_size flag was
+     doing double duty as "RandomResizedCrop's output size" -- renamed to
+     --global_crop_size (same default 224, same behavior). --image_size is now
+     a SEPARATE, genuinely new flag: an optional one-time raw-image pre-resize
+     (shorter side, bicubic) applied BEFORE any crop is drawn, decoupling "the
+     resolution crops are drawn from" from "the resolution crops are output
+     at". Defaults to None (disabled), so omitting it reproduces prior
+     behavior exactly. COMPATIBILITY NOTE: any existing command using the old
+     --image_size NNN to mean crop-output-size must be updated to
+     --global_crop_size NNN -- otherwise NNN will now ALSO silently enable the
+     new pre-resize step at that same value, which is very likely not what an
+     unmodified old command intended.
+  🔧 Checkpoints now record a "sizing_config" block (global_crop_size,
+     local_crop_size, raw_image_pre_resize, benthic_norm) inside their "config"
+     dict -- purely informational, doesn't affect training, but makes a saved
+     checkpoint self-describing about which of the now-three independent size
+     knobs (plus normalization choice) actually produced it, which matters
+     once you're comparing/resuming checkpoints across several ablation arms.
 
   KEPT AS INTENTIONAL, DOCUMENTED DEVIATIONS (not "fixed", by design):
   ⚠️  Pixel-space masking instead of official's embedding-space mask_token
@@ -468,14 +491,26 @@ class MultiCropTransform:
     reused for the remaining crops. This is needed for the official DINOv3
     recipe, where the first global crop gets blur-only treatment and later
     global crops get light-blur + solarize.
+
+    pre_resize: optional single transform (e.g. T.Resize(image_size)) applied
+    ONCE to the raw source image, before any global/local crop is drawn -- the
+    implementation point for get_transform()'s `image_size` parameter. None
+    (default) skips this entirely, matching every prior revision's behavior.
+    Applying it here (rather than duplicating it inside each of the three
+    augmentation branches in get_transform()) guarantees it's shared uniformly
+    across official_dinov3_aug/marine_aug/default and is only ever computed
+    once per source image regardless of how many crops are subsequently drawn.
     """
-    def __init__(self, num_global, num_local, global_aug, local_aug):
+    def __init__(self, num_global, num_local, global_aug, local_aug, pre_resize=None):
         self.num_global = num_global
         self.num_local = num_local
         self.global_augs = global_aug if isinstance(global_aug, (list, tuple)) else [global_aug]
         self.local_aug = local_aug
+        self.pre_resize = pre_resize
 
     def __call__(self, img):
+        if self.pre_resize is not None:
+            img = self.pre_resize(img)
         crops = []
         for i in range(self.num_global):
             t = self.global_augs[i] if i < len(self.global_augs) else self.global_augs[-1]
@@ -660,7 +695,7 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 def get_transform(
-    image_size: int = 224,
+    global_crop_size: int = 224,
     num_global_crops: int = 2,
     num_local_crops: int = 8,
     marine_aug: bool = False,
@@ -668,12 +703,61 @@ def get_transform(
     official_dinov3_aug: bool = False,
     benthic_norm: bool = False,
     local_crop_size: Optional[int] = None,
+    image_size: Optional[int] = None,
 ):
     """
-    underwater_orientation_aug: when True (default), adds RandomVerticalFlip + full
-    180-degree RandomRotation, since seafloor imagery has no canonical up/down
-    orientation. Set False for an ablation using only standard, orientation-preserving
-    augmentation (horizontal flip only).
+    global_crop_size: OUTPUT size (pixels) of RandomResizedCrop for global crops,
+    for ALL THREE augmentation paths (official_dinov3_aug, marine_aug, default).
+    Default 224. This was previously (confusingly) called `image_size` -- renamed
+    since it isn't the size of the raw image, it's the crop's target resolution.
+    See `image_size` below for the actually-separate "raw working resolution"
+    concept.
+
+    image_size: if set, the RAW source image is resized ONCE (shorter side
+    matched to this value, aspect ratio preserved, bicubic) BEFORE any of the
+    global/local crop pipelines run, for ALL THREE augmentation paths. This
+    decouples "the resolution crops are drawn from" from "the resolution crops
+    are output at" (global_crop_size / local_crop_size). Default None (disabled)
+    -- crops are drawn directly from each image's native resolution, exactly as
+    before this parameter existed, so omitting it is fully backward-compatible.
+    Two reasons to set it:
+      (1) Performance -- if source images are much higher-resolution than any
+          crop you'll ever take, RandomResizedCrop's near-scale-1.0 draws (up to
+          the full image) do their crop+resize work against the full native
+          resolution every single time, for all 10 crops. Pre-shrinking once
+          caps that cost.
+      (2) Consistency -- if your dataset mixes wildly different native
+          resolutions, RandomResizedCrop's `scale` parameter (fraction of AREA)
+          means the same `scale` value crops a very different absolute pixel
+          footprint depending on source resolution. Fixing a common working
+          resolution first makes `scale` comparable across images.
+    CAVEAT: when enabled, RandomResizedCrop's `scale` is relative to this
+    resized working image, NOT the original raw resolution -- this is a real,
+    deliberate behavioral difference from official's recipe (which always crops
+    relative to the untouched raw image), not merely a performance tweak. If
+    image_size is set smaller than global_crop_size or local_crop_size, near-
+    scale-1.0 crops will need to upsample to reach the requested output size
+    (works fine technically, just softer detail) -- main() warns if this
+    combination looks unintentional.
+
+    local_crop_size: local crop size (pixels), for ALL THREE augmentation paths
+    -- a single, unified control point. Default 96 if omitted, for every path,
+    including official_dinov3_aug. This is a DELIBERATE DEVIATION from
+    official's real local_crops_size (112, which official only ever pairs with
+    global=256 in the pretrain/gram_anchor recipes) in exchange for one
+    predictable default across every ablation arm -- so augmentation-pipeline
+    comparisons (marine_aug vs official_dinov3_aug vs default) are
+    apples-to-apples on crop footprint by default, unless you deliberately
+    vary it. For a genuine official-parity baseline run, pass
+    --local_crop_size 112 --global_crop_size 256 explicitly. Should stay divisible
+    by the model's patch size (16) regardless of which value you choose.
+
+    underwater_orientation_aug: when True (default), adds RandomVerticalFlip + a
+    random 90-degree-multiple rotation (RandomDiscreteRotation), since seafloor
+    imagery has no canonical up/down orientation. Set False for an ablation
+    using only standard, orientation-preserving augmentation (horizontal flip
+    only). Ignored when official_dinov3_aug is set (that recipe has no
+    rotation/flip beyond its own documented behavior).
 
     official_dinov3_aug: when True, ignores marine_aug/underwater_orientation_aug and
     builds the exact official DINO/DINOv2/DINOv3 multi-crop recipe: bicubic-interpolated
@@ -683,32 +767,22 @@ def get_transform(
     RandomGrayscale(p=0.2), and per-crop Gaussian blur (kernel_size=9, official's
     constant across all crop sizes) / solarization probabilities (first global crop:
     blur p=1.0; later global crops: blur p=0.1 + solarize p=0.2; local crops: blur
-    p=0.5). No vertical flip, rotation, or affine translate. Local crop size is
-    fixed at 112 regardless of `image_size` (official's real value across
-    pretrain/gram_anchor/high_res_adapt), which only pairs correctly with
-    `image_size=256` (official's actual global_crops_size for pretrain/gram_anchor) --
-    pass --image_size 256 alongside this flag for a genuinely faithful reproduction;
-    at other image_size values this remains a reasonable ablation, just not one
-    that corresponds to any single real recipe's crop-size pairing.
+    p=0.5). No vertical flip, rotation, or affine translate. Local crop size follows
+    `local_crop_size` like every other path (see above) -- pass --local_crop_size 112
+    --global_crop_size 256 for official's genuine crop-size pairing; the runtime warning in
+    main() reiterates this whenever the pairing doesn't match.
 
     marine_aug: when True, uses dedicated marine/underwater specific color, lighting,
     and turbidity augmentations (stronger underwater color jitter, gaussian blur,
-    solarization/grayscale) tailored for benthic sea floor imagery.
+    solarization/grayscale, plus tensor-space physics augmentations: vignette,
+    turbidity/haze, per-channel wavelength attenuation, marine snow) tailored for
+    benthic sea floor imagery.
 
     benthic_norm: when True, normalizes with BenthicNet-specific mean/std
     (mean=[0.359,0.413,0.386], std=[0.219,0.215,0.209]) instead of ImageNet
-    defaults. Also drives the RandomAffine fill color so exposed-canvas regions
-    blend with whichever normalization is active instead of defaulting to an
-    ImageNet-toned fill. Ignored when official_dinov3_aug is set (that path has
-    no RandomAffine and always normalizes with `normalize`, so it still honors
-    this flag through norm_mean/norm_std).
-
-    local_crop_size: overrides the local-crop pixel size for the marine_aug and
-    default paths (ignored when official_dinov3_aug is set, which has its own
-    fixed 112px local crop). Defaults to 96px if omitted -- override for
-    non-default image_size runs (e.g. 384) to preserve the intended
-    local:global crop-size ratio. Should stay divisible by the model's patch
-    size (16).
+    defaults. Also drives the RandomAffine fill color (default path only) so
+    exposed-canvas regions blend with whichever normalization is active instead
+    of defaulting to an ImageNet-toned fill.
     """
     norm_mean = BENTHIC_MEAN if benthic_norm else IMAGENET_MEAN
     norm_std = BENTHIC_STD if benthic_norm else IMAGENET_STD
@@ -718,7 +792,19 @@ def get_transform(
     ])
 
     affine_fill = tuple(round(m * 255) for m in norm_mean)
-    local_size = local_crop_size or 96   # was a bare 96 literal in two places below, untethered from --image_size
+    # Single, unified local-crop-size resolution point for ALL THREE augmentation
+    # paths below (official_dinov3_aug, marine_aug, default). Previously
+    # official_dinov3_aug hardcoded a bare `112` literal here and silently ignored
+    # `local_crop_size` entirely -- fixed so every path honors the same override.
+    local_size = local_crop_size or 96
+    # NEW: single, unified raw-image pre-resize, shared by ALL THREE augmentation
+    # paths via MultiCropTransform (applied once per source image, before any
+    # crop is drawn -- see MultiCropTransform.__call__). None (default) means no
+    # pre-resize happens at all, identical to every prior revision's behavior.
+    pre_resize = (
+        T.Resize(image_size, interpolation=T.InterpolationMode.BICUBIC)
+        if image_size is not None else None
+    )
 
     if official_dinov3_aug:
         # FIX: official's custom GaussianBlur hardcodes kernel_size=9 for every crop
@@ -738,30 +824,35 @@ def get_transform(
             T.RandomGrayscale(p=0.2),
         ])
         global_transfo1 = T.Compose([
-            T.RandomResizedCrop(image_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
+            T.RandomResizedCrop(global_crop_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
             flip_and_color_jitter,
             T.RandomApply([T.GaussianBlur(kernel_size=OFFICIAL_BLUR_KERNEL, sigma=(0.1, 2.0))], p=1.0),
             normalize,
         ])
         global_transfo2 = T.Compose([
-            T.RandomResizedCrop(image_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
+            T.RandomResizedCrop(global_crop_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
             flip_and_color_jitter,
             T.RandomApply([T.GaussianBlur(kernel_size=OFFICIAL_BLUR_KERNEL, sigma=(0.1, 2.0))], p=0.1),
             Solarization(p=0.2),
             normalize,
         ])
         local_aug = T.Compose([
-            T.RandomResizedCrop(112, scale=(0.05, 0.32), ratio=(0.75, 1.333), interpolation=BICUBIC),
+            # FIX: was a bare `112` literal, silently ignoring --local_crop_size.
+            # Now shares the same `local_size` resolution as marine_aug/default
+            # (defaults to 96 unless overridden). Pass --local_crop_size 112
+            # --global_crop_size 256 for official's genuine crop-size pairing.
+            T.RandomResizedCrop(local_size, scale=(0.05, 0.32), ratio=(0.75, 1.333), interpolation=BICUBIC),
             flip_and_color_jitter,
             T.RandomApply([T.GaussianBlur(kernel_size=OFFICIAL_BLUR_KERNEL, sigma=(0.1, 2.0))], p=0.5),
             normalize,
         ])
-        return MultiCropTransform(num_global_crops, num_local_crops, [global_transfo1, global_transfo2], local_aug)
+        return MultiCropTransform(num_global_crops, num_local_crops, [global_transfo1, global_transfo2], local_aug,
+                                   pre_resize=pre_resize)
 
     if marine_aug:
         BICUBIC = T.InterpolationMode.BICUBIC
         to_tensor = T.ToTensor()
-        norm = T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+        norm = T.Normalize(mean=norm_mean, std=norm_std)
         physics_aug = MarinePhysicsAugment()  # vignette + turbidity + channel attenuation + marine snow
 
         marine_orientation_transforms = [T.RandomHorizontalFlip(p=0.5)]
@@ -780,7 +871,7 @@ def get_transform(
         ])
 
         global_transfo1 = T.Compose([
-            T.RandomResizedCrop(image_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
+            T.RandomResizedCrop(global_crop_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
             color_and_distortions,
             T.RandomApply([T.GaussianBlur(kernel_size=15, sigma=(0.1, 2.0))], p=0.8),
             to_tensor,
@@ -788,7 +879,7 @@ def get_transform(
             norm,
         ])
         global_transfo2 = T.Compose([
-            T.RandomResizedCrop(image_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
+            T.RandomResizedCrop(global_crop_size, scale=(0.32, 1.0), ratio=(0.75, 1.333), interpolation=BICUBIC),
             color_and_distortions,
             T.RandomApply([T.GaussianBlur(kernel_size=15, sigma=(0.1, 2.0))], p=0.3),
             Solarization(p=0.25),
@@ -804,10 +895,11 @@ def get_transform(
             physics_aug,
             norm,
         ])
-        return MultiCropTransform(num_global_crops, num_local_crops, [global_transfo1, global_transfo2], local_aug)
+        return MultiCropTransform(num_global_crops, num_local_crops, [global_transfo1, global_transfo2], local_aug,
+                                   pre_resize=pre_resize)
 
     global_aug_list = [
-        T.RandomResizedCrop(image_size, scale=(0.4, 1.0), ratio=(0.75, 1.333)),
+        T.RandomResizedCrop(global_crop_size, scale=(0.4, 1.0), ratio=(0.75, 1.333)),
         T.RandomHorizontalFlip(p=0.5),
     ]
     if underwater_orientation_aug:
@@ -834,7 +926,7 @@ def get_transform(
         normalize,
     ])
     local_aug = T.Compose(local_aug_list)
-    return MultiCropTransform(num_global_crops, num_local_crops, global_aug, local_aug)
+    return MultiCropTransform(num_global_crops, num_local_crops, global_aug, local_aug, pre_resize=pre_resize)
 
 
 # ============================================================================
@@ -1308,6 +1400,7 @@ class DINOTrainer:
         use_tensorboard: bool = False,
         tensorboard_dir: Optional[str] = None,
         log_every_n_steps: int = 1,
+        sizing_config: Optional[dict] = None,
     ):
         # ---- Student / EMA teacher ----
         self.student = model
@@ -1352,6 +1445,12 @@ class DINOTrainer:
         self.dino_head_weight_norm = dino_head_weight_norm
         self.lr_schedule = lr_schedule
         self.current_iter = 0
+        # NEW: purely informational -- records which global_crop_size/local_crop_size/
+        # image_size/benthic_norm this run actually used, merged into every saved
+        # checkpoint's "config" dict below. Doesn't affect training in any way; exists
+        # so a checkpoint is self-describing about the sizing/norm choices that produced
+        # it, given there are now three independent size knobs instead of one.
+        self.sizing_config = sizing_config or {}
 
         # Masking config (see MaskingGenerator / _generate_batch_masks below).
         self.mask_ratio_min = mask_ratio_min
@@ -2032,6 +2131,7 @@ class DINOTrainer:
                 "warmup_epochs": self.warmup_epochs,
                 "total_epochs": self.total_epochs,
                 "base_lr": self.base_lr,
+                **self.sizing_config,
             },
         }
         if self.use_gram_teacher and self.gram_teacher is not None:
@@ -2144,12 +2244,11 @@ def knn_validation_probe(trainer, args, logger, device, k=20, batch_size=64):
     
     image_root = args.knn_image_root if hasattr(args, 'knn_image_root') and args.knn_image_root else None
     
-    # In knn_validation_probe():
     _mean = BENTHIC_MEAN if getattr(args, 'benthic_norm', False) else IMAGENET_MEAN
     _std = BENTHIC_STD if getattr(args, 'benthic_norm', False) else IMAGENET_STD
     val_transform = T.Compose([
-        T.Resize(args.image_size, interpolation=T.InterpolationMode.BICUBIC),
-        T.CenterCrop(args.image_size),
+        T.Resize(args.global_crop_size, interpolation=T.InterpolationMode.BICUBIC),
+        T.CenterCrop(args.global_crop_size),
         T.ToTensor(),
         T.Normalize(mean=_mean, std=_std),
     ])
@@ -2222,8 +2321,11 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger = setup_logging(args.log_dir)
     logger.info("=" * 70)
-    logger.info("DINOv3 SSL — Benthic Seafloor Imagery (v7 — benthic_norm/local_crop_size now real get_transform() params, "
-                "fixing the unconditional TypeError crash on every run)")
+    logger.info("DINOv3 SSL — Benthic Seafloor Imagery (v9 — image_size split from "
+                "global_crop_size: image_size is now the optional raw-image pre-resize, "
+                "global_crop_size is the RandomResizedCrop output size for global crops. "
+                "Update any old --image_size NNN commands to --global_crop_size NNN, "
+                "or NNN will now ALSO silently enable the new pre-resize step.)")
     logger.info("=" * 70)
     logger.info(f"Device: {device}")
 
@@ -2231,43 +2333,61 @@ def main(args):
                 f"(fraction of the batch that gets any masking at all -- official semantics)")
     logger.info(f"Pixel-space masking of masked positions: "
                 f"{'DISABLED (ablation)' if args.no_pixel_masking else 'ENABLED (intentional deviation from official mask_token substitution)'}")
-    
+
+    effective_local = args.local_crop_size or 96
+
     if args.official_dinov3_aug:
-        logger.info("Augmentation pipeline: OFFICIAL DINOv3 recipe (bicubic resize, grayscale + "
-                     "solarize + probability-gated jitter/blur with kernel_size=9, no flip, no "
-                     "rotation/affine) — --no_underwater_aug and --marine_aug are ignored")
-        if args.image_size != 256:
+        logger.info(f"Augmentation pipeline: OFFICIAL DINOv3 recipe (bicubic resize, grayscale + "
+                     f"solarize + probability-gated jitter/blur with kernel_size=9, no flip, no "
+                     f"rotation/affine) — --no_underwater_aug and --marine_aug are ignored. "
+                     f"Global crop {args.global_crop_size}px / local crop {effective_local}px.")
+        if args.global_crop_size != 256 or effective_local != 112:
             logger.warning(
-                f"--official_dinov3_aug is set with --image_size {args.image_size}, but local crops "
-                f"are fixed at 112 (official's real local_crops_size). Official only ever pairs "
-                f"112 local crops with image_size=256 global crops (pretrain/gram_anchor) -- this "
-                f"combination doesn't match any real recipe's crop-size pairing. Pass --image_size 256 "
-                f"for a genuinely faithful reproduction, or treat this run as an ablation rather than "
-                f"an official-parity baseline."
+                f"--official_dinov3_aug is set with global={args.global_crop_size}px / "
+                f"local={effective_local}px"
+                f"{' (unified default)' if args.local_crop_size is None else ' (overridden via --local_crop_size)'}. "
+                f"Official's real crop-size pairing is global=256 / local=112 (pretrain/gram_anchor "
+                f"recipes) -- pass --global_crop_size 256 --local_crop_size 112 for a genuinely faithful "
+                f"reproduction. Otherwise this remains a valid ablation, just not an official-parity "
+                f"baseline."
             )
-            
+
     elif args.marine_aug:
         logger.info(f"Augmentation pipeline: MARINE-SPECIFIC recipe (marine water-column color jitter, "
-                     f"turbidity blur, solarization, orientation augs={'ENABLED' if not args.no_underwater_aug else 'DISABLED (ablation)'})")
-        if args.local_crop_size is None and args.image_size != 224:
-            logger.warning(
-                f"marine_aug's local crop is a fixed 96px, independent of --image_size "
-                f"({args.image_size}). At other sizes local crops will be disproportionate "
-                f"to global crops unless you pass --local_crop_size explicitly."
-        )
+                     f"turbidity blur, solarization, orientation augs={'ENABLED' if not args.no_underwater_aug else 'DISABLED (ablation)'}). "
+                     f"Global crop {args.global_crop_size}px / local crop {effective_local}px.")
     else:
         logger.info(f"Augmentation pipeline: BENTHIC DEFAULT (orientation augs="
-                     f"{'ENABLED' if not args.no_underwater_aug else 'DISABLED (ablation)'})")
+                     f"{'ENABLED' if not args.no_underwater_aug else 'DISABLED (ablation)'}). "
+                     f"Global crop {args.global_crop_size}px / local crop {effective_local}px.")
+
+    if args.image_size is None:
+        logger.info("Raw-image pre-resize (--image_size): DISABLED -- crops are drawn "
+                    "directly from each source image's native resolution.")
+    else:
+        logger.info(f"Raw-image pre-resize (--image_size): {args.image_size}px "
+                    f"(shorter side, bicubic), applied once per source image before any "
+                    f"crop is drawn.")
+        largest_crop = max(args.global_crop_size, effective_local)
+        if args.image_size < largest_crop:
+            logger.warning(
+                f"--image_size {args.image_size} is SMALLER than your largest crop output "
+                f"({largest_crop}px). Near-scale-1.0 crops will need to upsample past the "
+                f"pre-resized working resolution to reach their target output size -- this "
+                f"runs fine, but softens detail on those crops. Likely unintentional; check "
+                f"--image_size/--global_crop_size/--local_crop_size are what you meant."
+            )
 
     transform = get_transform(
-        image_size=args.image_size,
+        global_crop_size=args.global_crop_size,
         num_global_crops=args.num_global_crops,
         num_local_crops=args.num_local_crops,
         marine_aug=args.marine_aug,
         underwater_orientation_aug=not args.no_underwater_aug,
         official_dinov3_aug=args.official_dinov3_aug,
         benthic_norm=args.benthic_norm,
-        local_crop_size=args.local_crop_size,   # was missing -- CLI flag reached nothing without this
+        local_crop_size=args.local_crop_size,
+        image_size=args.image_size,
     )
 
     logger.info(f"Normalization: {'BenthicNet-specific' if args.benthic_norm else 'ImageNet default'}")
@@ -2423,6 +2543,12 @@ def main(args):
         use_tensorboard=args.use_tensorboard,
         tensorboard_dir=args.tensorboard_dir,
         log_every_n_steps=args.log_every_n_steps,
+        sizing_config={
+            "global_crop_size": args.global_crop_size,
+            "local_crop_size": effective_local,
+            "raw_image_pre_resize": args.image_size,
+            "benthic_norm": args.benthic_norm,
+        },
     )
 
     if args.init_from_ckpt:
@@ -2538,7 +2664,23 @@ def parse_args():
     p.add_argument("--data_dir",       type=str, default=None,
                     help="Folder of individual images to scan recursively. Required "
                          "unless --use_webdataset is set (validated at runtime).")
-    p.add_argument("--image_size",     type=int, default=224)
+    p.add_argument("--global_crop_size",     type=int, default=224,
+                    help="OUTPUT size (px) of RandomResizedCrop for global crops, for ALL "
+                         "augmentation paths (official_dinov3_aug, marine_aug, default). "
+                         "Default 224. Was previously (confusingly) called --image_size -- "
+                         "if you have old commands using --image_size NNN to mean this, "
+                         "update them to --global_crop_size NNN. See --image_size below for "
+                         "the new, separate meaning that flag now has.")
+    p.add_argument("--image_size", type=int, default=None,
+                    help="If set, resizes the RAW source image ONCE (shorter side, bicubic) "
+                         "to this value before any crop is drawn, for ALL augmentation paths. "
+                         "Default None (disabled) -- crops are drawn directly from each "
+                         "image's native resolution, matching every prior revision's behavior. "
+                         "Decouples 'resolution crops are drawn from' from 'resolution crops "
+                         "are output at' (--global_crop_size/--local_crop_size). NOTE: when "
+                         "set, RandomResizedCrop's scale is relative to THIS resized image, "
+                         "not the original raw resolution -- a real behavioral difference "
+                         "from official's recipe, not just a speed tweak.")
     p.add_argument("--model_id",       type=str, default="facebook/dinov3-vits16-pretrain-lvd1689m")
     p.add_argument("--proj_dim",       type=int, default=16384)
 
@@ -2653,23 +2795,28 @@ def parse_args():
     p.add_argument("--num_global_crops", type=int, default=2)
     p.add_argument("--num_local_crops",  type=int, default=8)
     p.add_argument("--local_crop_size", type=int, default=None,
-                help="Local crop size (px) for marine_aug/default paths -- ignored when "
-                     "--official_dinov3_aug is set. Defaults to 96px if omitted, independent "
-                     "of --image_size. Override for non-default --image_size runs (e.g. "
-                     "Stage 3's 384) to preserve the intended local:global ratio. Should stay "
-                     "divisible by the model's patch size (16).")
+                help="Local crop size (px), for ALL augmentation paths (official_dinov3_aug, "
+                     "marine_aug, default) -- a single, unified control point. Defaults to "
+                     "96px if omitted, everywhere, including official_dinov3_aug. This is a "
+                     "deliberate deviation from official's real value (112, paired with "
+                     "--global_crop_size 256) in exchange for one predictable default across every "
+                     "ablation arm. For genuine official-parity, pass --local_crop_size 112 "
+                     "--global_crop_size 256 explicitly. Should stay divisible by the model's patch "
+                     "size (16) regardless of value.")
 
     # Augmentation ablations
     p.add_argument("--no_underwater_aug", action="store_true", default=False,
                     help="Ablation: disable underwater-specific orientation augmentation "
-                         "(RandomVerticalFlip p=0.3 and full 180-degree RandomRotation), "
-                         "leaving only standard, orientation-preserving DINO-style augmentation.")
+                         "(RandomVerticalFlip p=0.3 and a random 90-degree-multiple rotation), "
+                         "leaving only standard, orientation-preserving DINO-style augmentation. "
+                         "Ignored when --official_dinov3_aug is set.")
     p.add_argument("--official_dinov3_aug", action="store_true", default=False,
                     help="Ablation: replace the marine-tuned augmentation pipeline with the "
                          "exact official DINO/DINOv2/DINOv3 multi-crop recipe (bicubic resize, "
-                         "kernel_size=9 blur, local crop size 112 -- matches official's real "
-                         "local_crops_size across pretrain/gram_anchor/high_res_adapt, not "
-                         "DINOv2's 96). Ignores --marine_aug and --no_underwater_aug when set.")
+                         "kernel_size=9 blur, no flip/rotation/affine). Local crop size follows "
+                         "--local_crop_size like every other path (default 96px unless "
+                         "overridden -- official's real value is 112px, paired with "
+                         "--global_crop_size 256). Ignores --marine_aug and --no_underwater_aug when set.")
     p.add_argument("--benthic_norm", action="store_true", default=False,
                 help="Use BenthicNet-specific normalization (mean=[0.359,0.413,0.386], "
                      "std=[0.219,0.215,0.209], from DalhousieAI/ssl-bentho) instead of "
