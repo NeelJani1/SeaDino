@@ -334,7 +334,12 @@ class BenthicImageDataset(Dataset):
 
     def __getitem__(self, idx: int):
         try:
-            img = Image.open(self.image_paths[idx]).convert("RGB")
+            # FIX: use a context manager so the underlying file descriptor closes
+            # immediately after decoding, instead of waiting on the GC. With
+            # num_workers > 0 this can otherwise exhaust the OS's open-file limit
+            # ("Too many open files") over a long run.
+            with Image.open(self.image_paths[idx]) as f:
+                img = f.convert("RGB")
         except Exception as e:
             print(f"⚠️  Failed to load {self.image_paths[idx]}: {e}")
             return self.__getitem__(np.random.randint(0, len(self)))
@@ -562,6 +567,11 @@ class RandomVignette:
     def __init__(self, p: float = 0.5, strength_range: Tuple[float, float] = (0.25, 0.6)):
         self.p = p
         self.strength_range = strength_range
+        # FIX: cache meshgrids by (H, W). This augmentation runs inside DataLoader
+        # workers on every crop -- potentially millions of times per run -- and
+        # (H, W) only ever takes 1-2 distinct values (global/local crop size), so
+        # re-allocating the coordinate grid every call was pure waste.
+        self._mesh_cache: dict = {}
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         if random.random() >= self.p:
@@ -569,11 +579,14 @@ class RandomVignette:
         _, H, W = x.shape
         cy = random.uniform(0.2, 0.8) * H
         cx = random.uniform(0.2, 0.8) * W
-        yy, xx = torch.meshgrid(
-            torch.arange(H, dtype=torch.float32),
-            torch.arange(W, dtype=torch.float32),
-            indexing="ij",
-        )
+        shape_key = (H, W)
+        if shape_key not in self._mesh_cache:
+            self._mesh_cache[shape_key] = torch.meshgrid(
+                torch.arange(H, dtype=torch.float32),
+                torch.arange(W, dtype=torch.float32),
+                indexing="ij",
+            )
+        yy, xx = self._mesh_cache[shape_key]
         dist = torch.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
         max_dist = math.sqrt(H ** 2 + W ** 2) / 2
         dist = (dist / max_dist).clamp(0, 1)
@@ -694,11 +707,22 @@ BENTHIC_STD = (0.219, 0.215, 0.209)
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
+class _Identity:
+    """Picklable no-op transform -- drop-in replacement for MarinePhysicsAugment()
+    when --no_marine_physics_aug disables it. Deliberately a real class rather
+    than `lambda x: x`, matching why _NotNone exists elsewhere in this file: a
+    lambda defined inside a function can't be pickled under Windows' 'spawn'
+    multiprocessing start method (WSL2/Linux uses 'fork' and wouldn't hit this,
+    but no reason to reintroduce the same class of bug already fixed once)."""
+    def __call__(self, x):
+        return x
+
 def get_transform(
     global_crop_size: int = 224,
     num_global_crops: int = 2,
     num_local_crops: int = 8,
     marine_aug: bool = False,
+    marine_physics_aug: bool = True,   # ADD THIS LINE
     underwater_orientation_aug: bool = True,
     official_dinov3_aug: bool = False,
     benthic_norm: bool = False,
@@ -853,7 +877,7 @@ def get_transform(
         BICUBIC = T.InterpolationMode.BICUBIC
         to_tensor = T.ToTensor()
         norm = T.Normalize(mean=norm_mean, std=norm_std)
-        physics_aug = MarinePhysicsAugment()  # vignette + turbidity + channel attenuation + marine snow
+        physics_aug = MarinePhysicsAugment() if marine_physics_aug else _Identity()  # vignette + turbidity + channel attenuation + marine snow, or a no-op for the ablation
 
         marine_orientation_transforms = [T.RandomHorizontalFlip(p=0.5)]
         if underwater_orientation_aug:
@@ -972,14 +996,18 @@ class MaskingGenerator:
             if w < self.width and h < self.height:
                 top = random.randint(0, self.height - h)
                 left = random.randint(0, self.width - w)
-                num_masked = mask[top:top + h, left:left + w].sum()
+                region = mask[top:top + h, left:left + w]
+                num_masked = region.sum()
                 # Overlap
                 if 0 < h * w - num_masked <= max_mask_patches:
-                    for i in range(top, top + h):
-                        for j in range(left, left + w):
-                            if mask[i, j] == 0:
-                                mask[i, j] = 1
-                                delta += 1
+                    # FIX: vectorized -- was a pure-Python double for-loop over every
+                    # (i, j) in the block. This runs on the CPU, synchronously, inside
+                    # the main training step (see _generate_batch_masks), so its cost
+                    # is pure GPU idle time. `region` is a view into `mask`, so writing
+                    # through it still mutates `mask` in place; the delta count (only
+                    # newly-flipped cells) is preserved exactly.
+                    delta += int((~region).sum())
+                    region[:] = True
                 if delta > 0:
                     break
         return delta
@@ -1096,6 +1124,10 @@ class KoLeoLoss(nn.Module):
         super().__init__()
         self.pdist = nn.PairwiseDistance(p=2, eps=1e-8)
 
+    @torch.no_grad()  # FIX: only the integer .indices are used downstream (see
+                       # forward()); building a full autograd graph through this
+                       # NxN dot-product matrix was wasted compute + memory, since
+                       # indices never carry gradient regardless.
     def _nearest_neighbours(self, x: torch.Tensor) -> torch.Tensor:
         dots = torch.mm(x, x.t())
         n = x.shape[0]
@@ -1630,6 +1662,14 @@ class DINOTrainer:
                 "params": group_data["params"],
                 "lr": self.base_lr * lr_mult,
                 "weight_decay": self.weight_decay_start * wd_mult,
+                # FIX (critical): train_epoch's weight-decay schedule used to
+                # overwrite param_group["weight_decay"] on EVERY group with the
+                # same scalar every step, silently wiping out the wd_mult=0.0
+                # exemption for biases/norm/gamma params set up right here.
+                # Stashing wd_mult on the group lets train_epoch re-derive the
+                # correct per-group value instead of clobbering it -- see the
+                # matching fix in train_epoch.
+                "wd_mult": wd_mult,
             }
             param_groups.append(pg)
         
@@ -1686,7 +1726,12 @@ class DINOTrainer:
     def _ema_update(self):
         tau = self._get_ema_tau()
         for sp, tp in zip(self.student.parameters(), self.teacher.parameters()):
-            tp.data.mul_(tau).add_(sp.data * (1.0 - tau))
+            # FIX: `sp.data * (1.0 - tau)` allocated a brand-new temporary tensor for
+            # every parameter tensor on every single training step. `alpha=` fuses
+            # the scale-and-add into one in-place op with no extra allocation, and
+            # drops the deprecated `.data` access pattern (which can also interact
+            # badly with torch.compile's graph tracing).
+            tp.mul_(tau).add_(sp, alpha=1.0 - tau)
 
     # ------------------------------------------------------------------
     # MASKING
@@ -1758,64 +1803,77 @@ class DINOTrainer:
 
         crop_masks: list[Optional[torch.Tensor]] = []
 
-        # ---- STUDENT FORWARD ----------------------------------------
-        for idx, crop in enumerate(crops_batch):
+        # ---- STUDENT FORWARD: global crops (per-crop masking) --------
+        for idx in range(G):
+            crop = crops_batch[idx]
             H, W = crop.shape[-2], crop.shape[-1]
             n_h, n_w = H // ps, W // ps
             n_patches = n_h * n_w
 
-            if idx < G:
-                if self.use_ibot:
-                    mask, mask_weight = self._generate_batch_masks(B, n_h, n_w, self.device)
-                else:
-                    mask, mask_weight = None, None
-                crop_masks.append(mask)
-
-                if self.use_ibot and self.apply_pixel_masking and mask is not None:
-                    # ⚠️  Pixel-space masking (diverges from official's embedding-space
-                    #    mask_token substitution in prepare_tokens_with_masks). Retained
-                    #    intentionally: models sensor occlusion/turbidity in benthic
-                    #    imagery. Works correctly with any mask content (block-wise or
-                    #    scattered) since it's just a multiplicative zero-out -- the
-                    #    official-faithful mask generated above drives it directly, no
-                    #    separate coin-flip needed (that used to double-gate against the
-                    #    per-sample probability already baked into mask generation).
-                    pmask = (
-                        mask.view(B, n_h, n_w)
-                        .repeat_interleave(ps, dim=1)
-                        .repeat_interleave(ps, dim=2)
-                        .unsqueeze(1)
-                        .to(crop.device)
-                    )
-                    inp = crop * (~pmask)
-                else:
-                    inp = crop
-                out = self.student(pixel_values=inp)
+            if self.use_ibot:
+                mask, mask_weight = self._generate_batch_masks(B, n_h, n_w, self.device)
             else:
-                out = self.student(pixel_values=crop)
+                mask, mask_weight = None, None
+            crop_masks.append(mask)
+
+            if self.use_ibot and self.apply_pixel_masking and mask is not None:
+                # ⚠️  Pixel-space masking (diverges from official's embedding-space
+                #    mask_token substitution in prepare_tokens_with_masks). Retained
+                #    intentionally: models sensor occlusion/turbidity in benthic
+                #    imagery. Works correctly with any mask content (block-wise or
+                #    scattered) since it's just a multiplicative zero-out -- the
+                #    official-faithful mask generated above drives it directly, no
+                #    separate coin-flip needed (that used to double-gate against the
+                #    per-sample probability already baked into mask generation).
+                pmask = (
+                    mask.view(B, n_h, n_w)
+                    .repeat_interleave(ps, dim=1)
+                    .repeat_interleave(ps, dim=2)
+                    .unsqueeze(1)
+                    .to(crop.device)
+                )
+                inp = crop * (~pmask)
+            else:
+                inp = crop
+            out = self.student(pixel_values=inp)
 
             # Extract tokens
             cls_pre  = out.last_hidden_state[:, 0, :]              # backbone CLS (pre-head)
             cls_post = self.student.dino_head(cls_pre)              # prototype space
             patches  = out.last_hidden_state[:, -n_patches:, :]
 
-            if idx < G:
-                s_global_post.append(cls_post)
-                s_global_pre.append(cls_pre)          # kept per-crop for KoLeo
-                s_patches.append(patches)
+            s_global_post.append(cls_post)
+            s_global_pre.append(cls_pre)          # kept per-crop for KoLeo
+            s_patches.append(patches)
 
-                if self.use_ibot and mask is not None:
-                    flat_p = patches.reshape(B * n_patches, -1)
-                    flat_m = mask.reshape(B * n_patches)
-                    masked = flat_p[flat_m]
-                    if masked.numel() > 0:
-                        s_masked_ibot.append(self.student.ibot_head(masked))
-                        s_masked_weights.append(mask_weight)
-            else:
-                s_local.append(cls_post)
+            if self.use_ibot and mask is not None:
+                flat_p = patches.reshape(B * n_patches, -1)
+                flat_m = mask.reshape(B * n_patches)
+                masked = flat_p[flat_m]
+                if masked.numel() > 0:
+                    s_masked_ibot.append(self.student.ibot_head(masked))
+                    s_masked_weights.append(mask_weight)
+
+        # ---- STUDENT FORWARD: local crops, batched into ONE pass -----
+        # FIX: previously ran one forward pass PER local crop (e.g. 8 sequential
+        # [B, 3, 96, 96] calls) in this same loop. Local crops get no masking and
+        # identical treatment, so -- exactly like official DINOv2/DINOv3 -- they
+        # can be concatenated along the batch dimension and run through the
+        # student in a single call. This cuts student forward passes from (G + L)
+        # to (G + 1) and removes most of the per-crop CUDA kernel-launch overhead
+        # that was leaving the GPU under-utilized at this crop size/batch size.
+        # Numerically identical to the old per-crop loop as long as nothing in the
+        # backbone/head mixes information across the batch dimension: ViT
+        # self-attention only attends within one image's own tokens, and
+        # DINOHead's optional BatchNorm (use_bn) defaults to False. If you ever
+        # set use_bn=True this stops being equivalent and the loop should be
+        # reverted to per-crop.
+        local_crops = torch.cat(crops_batch[G:], dim=0)              # [L*B, C, H, W]
+        local_out = self.student(pixel_values=local_crops)
+        local_cls_post = self.student.dino_head(local_out.last_hidden_state[:, 0, :])
+        s_local = local_cls_post.view(self.num_local_crops, B, -1)   # [L, B, K]
 
         s_global_post = torch.stack(s_global_post, dim=0)   # [G, B, K]
-        s_local       = torch.stack(s_local, dim=0)          # [L, B, K]
 
         # ---- TEACHER FORWARD (unmasked, no grad) --------------------
         with torch.no_grad():
@@ -1904,20 +1962,25 @@ class DINOTrainer:
 
         # Gram
         if self.use_gram and s_patches:
-            gram_src = (
-                self.gram_teacher
-                if (self.use_gram_teacher and self.gram_teacher is not None)
-                else self.teacher
-            )
-            with torch.no_grad():
-                tg_patches = []
-                for crop in crops_batch[:G]:
-                    n_p = (crop.shape[-2] // ps) * (crop.shape[-1] // ps)
-                    o = gram_src(pixel_values=crop)
-                    tg_patches.append(o.last_hidden_state[:, -n_p:, :])
+            if self.use_gram_teacher and self.gram_teacher is not None:
+                with torch.no_grad():
+                    tg_patches = []
+                    for crop in crops_batch[:G]:
+                        n_p = (crop.shape[-2] // ps) * (crop.shape[-1] // ps)
+                        o = self.gram_teacher(pixel_values=crop)
+                        tg_patches.append(o.last_hidden_state[:, -n_p:, :])
+                t_gram = torch.cat(tg_patches, dim=0)
+            else:
+                # FIX: when there's no separate static Gram teacher (the default),
+                # gram_src used to be `self.teacher` -- but `self.teacher` was
+                # ALREADY forward-passed on these exact global crops a few lines
+                # above, in the "TEACHER FORWARD" block (that's what `t_patches`
+                # is). Re-running the same frozen model on the same input here was
+                # a 100%-duplicate forward pass, every single training step. Reuse
+                # the result instead of recomputing it.
+                t_gram = torch.cat(t_patches, dim=0)
 
             s_gram = torch.cat(s_patches, dim=0)
-            t_gram = torch.cat(tg_patches, dim=0)
             gram_term = self.gram_loss_weight * self.gram_loss_fn(s_gram, t_gram)
             total = total + gram_term
             components["gram"] = gram_term.item()
@@ -1972,14 +2035,24 @@ class DINOTrainer:
 
             for param_group in self.optimizer.param_groups:
                 if "weight_decay" in param_group:
-                    param_group["weight_decay"] = current_wd
+                    # FIX (critical): was `param_group["weight_decay"] = current_wd`,
+                    # which overwrote every group -- including the wd_mult=0.0 groups
+                    # (biases, LayerNorm, gamma/LayerScale) built in _param_groups --
+                    # with the same nonzero value on the very first step, silently
+                    # erasing the exemption for the rest of training. Re-applying the
+                    # per-group multiplier here restores it.
+                    param_group["weight_decay"] = current_wd * param_group.get("wd_mult", 1.0)
 
             crops_batch = (
-                [c.to(self.device) for c in crops_batch]
+                # FIX: non_blocking=True lets these H2D copies overlap with CPU work
+                # instead of blocking -- pin_memory=True is already set on the
+                # DataLoader(s), so this was leaving free async-transfer capability
+                # unused.
+                [c.to(self.device, non_blocking=True) for c in crops_batch]
                 if isinstance(crops_batch, (list, tuple))
-                else crops_batch.to(self.device)
+                else crops_batch.to(self.device, non_blocking=True)
             )
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
 
             if self.use_amp:
                 dtype = (
@@ -2125,6 +2198,12 @@ class DINOTrainer:
             "teacher_state_dict": self.teacher.state_dict(), # ✅ FIX: Saved Teacher Weights
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
+            # FIX: GradScaler tracks a dynamic loss-scale factor when training in
+            # float16 (irrelevant for bf16, which bypasses the scaler entirely --
+            # see self.scaler's construction above). Without saving this, resuming
+            # a float16 run reset the scale back to its default (65536.0) every
+            # time, causing a burst of skipped steps from initial overflow.
+            "scaler_state_dict": self.scaler.state_dict() if self.scaler is not None else None,
             "loss": loss,
             "current_iter": self.current_iter,
             "config": {
@@ -2161,7 +2240,15 @@ class KNNProbeDataset(Dataset):
         self.transform = transform
         self.samples = []
         extensions = ("", ".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
-        
+
+        # FIX: this used to call os.path.isfile() up to 14x per row (2 candidate
+        # roots x 7 extensions) -- hundreds of thousands of blocking syscalls for
+        # a large validation set, and this class is rebuilt from scratch on every
+        # k-NN validation epoch. List each candidate directory ONCE and use O(1)
+        # set-membership checks instead.
+        root_files = set(os.listdir(image_root)) if image_root and os.path.isdir(image_root) else set()
+        cwd_files = set(os.listdir(os.getcwd()))
+
         for _, row in df.iterrows():
             image_id = str(row['image'])
             label_id = row['label_id']
@@ -2170,16 +2257,16 @@ class KNNProbeDataset(Dataset):
             # 1. Try relative to image_root
             if image_root:
                 for ext in extensions:
-                    candidate = os.path.join(image_root, f"{image_id}{ext}")
-                    if os.path.isfile(candidate):
-                        img_path = candidate
+                    fname = f"{image_id}{ext}"
+                    if fname in root_files:
+                        img_path = os.path.join(image_root, fname)
                         break
             # 2. Try relative to working directory or direct path
             if not img_path:
                 for ext in extensions:
-                    candidate = f"{image_id}{ext}"
-                    if os.path.isfile(candidate):
-                        img_path = candidate
+                    fname = f"{image_id}{ext}"
+                    if fname in cwd_files:
+                        img_path = fname
                         break
             
             if img_path:
@@ -2208,7 +2295,7 @@ def _collate_knn(batch):
 
 
 @torch.no_grad()
-def knn_validation_probe(trainer, args, logger, device, k=20, batch_size=64):
+def knn_validation_probe(trainer, args, logger, device, k=20, batch_size=64, knn_chunk_size=2048):
     """
     Validate on a held-out test subset using k-NN classification on frozen teacher CLS features.
     
@@ -2292,11 +2379,20 @@ def knn_validation_probe(trainer, args, logger, device, k=20, batch_size=64):
     labels = torch.cat(labels_list, dim=0)  # [N]
     
     # Compute k-NN accuracy
+    # FIX: was a single `feats @ feats.t()` materializing a dense [N, N] float32
+    # matrix on the CPU in one shot -- 10GB at N=50k, 40GB at N=100k, an easy
+    # OOM/crash on a large validation set. Chunk the query side so peak memory is
+    # bounded to O(chunk_size * N) instead of O(N^2).
     with torch.no_grad():
-        sims = feats @ feats.t()  # [N, N]
-        sims.fill_diagonal_(-1e9)  # exclude self
-        topk_indices = sims.topk(k, dim=1).indices  # [N, k]
-        topk_labels = labels[topk_indices]  # [N, k]
+        N = feats.shape[0]
+        topk_labels_chunks = []
+        for i in range(0, N, knn_chunk_size):
+            end_i = min(i + knn_chunk_size, N)
+            sims_chunk = feats[i:end_i] @ feats.t()          # [chunk, N]
+            sims_chunk[:, i:end_i].fill_diagonal_(-1e9)      # exclude self
+            topk_idx = sims_chunk.topk(k, dim=1).indices     # [chunk, k]
+            topk_labels_chunks.append(labels[topk_idx])
+        topk_labels = torch.cat(topk_labels_chunks, dim=0)   # [N, k]
         
         try:
             preds = torch.mode(topk_labels, dim=1).values
@@ -2383,6 +2479,7 @@ def main(args):
         num_global_crops=args.num_global_crops,
         num_local_crops=args.num_local_crops,
         marine_aug=args.marine_aug,
+        marine_physics_aug=not args.no_marine_physics_aug,
         underwater_orientation_aug=not args.no_underwater_aug,
         official_dinov3_aug=args.official_dinov3_aug,
         benthic_norm=args.benthic_norm,
@@ -2593,6 +2690,14 @@ def main(args):
                 trainer.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
             except Exception:
                 logger.warning("Scheduler state not loaded — restarting.")
+        # FIX: restore GradScaler's dynamic loss-scale state (float16 runs only;
+        # see save_checkpoint). Checkpoints saved before this fix simply won't
+        # have the key, so .get() makes this a no-op for them.
+        if trainer.scaler is not None and ckpt.get("scaler_state_dict") is not None:
+            try:
+                trainer.scaler.load_state_dict(ckpt["scaler_state_dict"])
+            except Exception:
+                logger.warning("GradScaler state not loaded — starting from a fresh loss scale.")
         trainer.current_iter = ckpt.get("current_iter", 0)
         if args.use_gram_teacher and "gram_teacher_state_dict" in ckpt:
             trainer.gram_teacher.load_state_dict(ckpt["gram_teacher_state_dict"])
@@ -2852,6 +2957,12 @@ def parse_args():
     p.add_argument("--log_dir",       type=str, default="./logs")
     p.add_argument("--resume",        type=str, default=None)
     p.add_argument("--marine_aug",    action="store_true")
+    p.add_argument("--no_marine_physics_aug", action="store_true", default=False,
+                    help="Ablation: with --marine_aug set, keep its orientation "
+                         "geometry and color jitter/blur/solarize but disable the "
+                         "tensor-space physics augmentations (vignette, turbidity, "
+                         "channel attenuation, marine snow) specifically, to isolate "
+                         "their contribution. Ignored without --marine_aug.")
 
     # k-NN Validation for best.ckpt selection (alternative to training loss)
     p.add_argument("--use_knn_validation", action="store_true", default=False,
