@@ -1,0 +1,30 @@
+# Evaluation outputs & generated results
+eval_output/
+*.csv
+*.png
+*.jpg
+*.jpeg
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+
+# Large Model Weights & Data files
+*.ckpt
+*.pt
+*.pth
+*.tar
+*.zip
+*.parquet
+
+# VS Code settings
+.vscode/
