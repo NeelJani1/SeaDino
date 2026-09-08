@@ -1,9 +1,16 @@
-# Evaluation outputs & generated results
+# Evaluation outputs & generated plots
 eval_output/
-*.csv
+leakage_inspection/
 *.png
 *.jpg
 *.jpeg
+*.svg
+
+# Benchmark spatial splits are tracked; all other run CSVs and NPZ caches are ignored
+*.csv
+!german_bank_2010_spatial_split.csv
+!substrate_depth_2_spatial_split.csv
+*.npz
 
 # Python bytecode & cache
 __pycache__/
@@ -12,11 +19,22 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 
+# Scratch & temporary diagnostic scripts
+task1_*.py
+embed_gallery_images.py
+check_lr_decay.py
+
 # Virtual Environments
 .env
 .venv
 env/
 venv/
+
+# Weights & Biases & Training logs
+wandb/
+stage1_*/
+*_logs/
+*.log
 
 # Large Model Weights & Data files
 *.ckpt
@@ -25,6 +43,9 @@ venv/
 *.tar
 *.zip
 *.parquet
+data/
 
-# VS Code settings
+# IDE & Editor settings
 .vscode/
+.idea/
+.DS_Store

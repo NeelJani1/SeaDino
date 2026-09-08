@@ -11,6 +11,7 @@ def load_dinov3_backbone(checkpoint_path: Optional[str], model_id: str, device: 
     """Loads DINOv3 backbone from a .ckpt (EMA teacher) or raw Hugging Face baseline."""
     model = AutoModel.from_pretrained(model_id, attn_implementation="sdpa", dtype=dtype)
     epoch, train_loss = None, None
+    benthic_norm = False
 
     if checkpoint_path is not None:
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
@@ -20,9 +21,13 @@ def load_dinov3_backbone(checkpoint_path: Optional[str], model_id: str, device: 
         epoch = ckpt.get("epoch", None)
         train_loss = ckpt.get("loss", ckpt.get("ssl_loss", None))
 
+        cfg = ckpt.get("config", {})
+        if isinstance(cfg, dict):
+            benthic_norm = cfg.get("benthic_norm", False)
+
     model = model.to(device=device, dtype=dtype)
     model.eval()
-    return model, epoch, train_loss
+    return model, epoch, train_loss, benthic_norm
 
 
 class LinearSegmenter(nn.Module):

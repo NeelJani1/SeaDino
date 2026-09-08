@@ -1,20 +1,19 @@
-"""High-throughput k-NN runner using GPU-accelerated Bicubic interpolation."""
+"""High-throughput k-NN runner with Bicubic transforms."""
 
 from sklearn.metrics import confusion_matrix, f1_score
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from eval_suite.config import IMAGENET_MEAN, IMAGENET_STD
 from eval_suite.datasets.single_label import SingleLabelDataset
-from eval_suite.utils import gpu_bicubic_preprocess, seed_worker
+from eval_suite.utils import seed_worker
 
 
 @torch.no_grad()
-def evaluate_knn(model, train_samples, test_samples, num_classes, device, dtype, batch_size=256, num_workers=8, k=20, temp=0.07):
+def evaluate_knn(model, train_samples, test_samples, num_classes, transform, device, dtype, batch_size=256, num_workers=8, k=20, temp=0.07):
     g = torch.Generator().manual_seed(42)
-    train_ds = SingleLabelDataset(train_samples)
-    test_ds = SingleLabelDataset(test_samples)
+    train_ds = SingleLabelDataset(train_samples, transform=transform)
+    test_ds = SingleLabelDataset(test_samples, transform=transform)
 
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
@@ -30,9 +29,8 @@ def evaluate_knn(model, train_samples, test_samples, num_classes, device, dtype,
     def _extract(loader, desc="Features"):
         feats, targets = [], []
         for images, y in tqdm(loader, desc=f"      Extracting {desc}", leave=False):
-            # GPU-Accelerated Bicubic Interpolation (< 1ms on RTX 4090)
-            images_gpu = gpu_bicubic_preprocess(images, target_size=(224, 224), mean=IMAGENET_MEAN, std=IMAGENET_STD, device=device, dtype=dtype)
-            out = model(images_gpu)
+            images = images.to(device=device, dtype=dtype, non_blocking=True)
+            out = model(images)
             f = out.last_hidden_state[:, 0] if hasattr(out, "last_hidden_state") else out[0][:, 0]
             feats.append(F.normalize(f.float(), dim=-1, p=2).cpu())
             targets.append(y)

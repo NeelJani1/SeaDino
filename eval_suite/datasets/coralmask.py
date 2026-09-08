@@ -13,17 +13,26 @@ from eval_suite.config import IMAGENET_MEAN, IMAGENET_STD
 
 class CoralMaskDataset(Dataset):
     def __init__(self, data_dir: str, split: str = "train", width: int = 512, height: int = 512,
-                 max_samples=None, mean=IMAGENET_MEAN, std=IMAGENET_STD):
+                 max_samples=None, mean=IMAGENET_MEAN, std=IMAGENET_STD, test_manifest=None):
         self.img_dir = os.path.join(data_dir, split, "images")
         self.json_dir = os.path.join(data_dir, split, "jsons")
         self.width, self.height = width, height
 
-        img_files = sorted([f for f in os.listdir(self.img_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
         self.samples = []
-        for img_name in img_files:
-            json_path = os.path.join(self.json_dir, f"{os.path.splitext(img_name)[0]}.json")
-            if os.path.isfile(json_path):
-                self.samples.append((os.path.join(self.img_dir, img_name), json_path))
+        if split == "test" and test_manifest and os.path.isfile(test_manifest):
+            from pathlib import Path
+            with open(test_manifest, "r") as f:
+                manifest_paths = [Path(line.strip()) for line in f if line.strip()]
+            for p in manifest_paths:
+                json_path = os.path.join(self.json_dir, f"{p.stem}.json")
+                if os.path.isfile(json_path):
+                    self.samples.append((str(p), json_path))
+        else:
+            img_files = sorted([f for f in os.listdir(self.img_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+            for img_name in img_files:
+                json_path = os.path.join(self.json_dir, f"{os.path.splitext(img_name)[0]}.json")
+                if os.path.isfile(json_path):
+                    self.samples.append((os.path.join(self.img_dir, img_name), json_path))
 
         if max_samples and max_samples < len(self.samples):
             self.samples = self.samples[:max_samples]
@@ -35,9 +44,9 @@ class CoralMaskDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path, json_path = self.samples[idx]
-        with Image.open(img_path) as img:
-            img = img.convert("RGB")
-            orig_w, orig_h = img.size
+        with Image.open(img_path) as raw_img:
+            orig_w, orig_h = raw_img.size
+            img = raw_img.convert("RGB").resize((self.width, self.height), Image.BILINEAR)
 
         binary_mask = np.zeros((orig_h, orig_w), dtype=np.uint8)
         try:
@@ -53,6 +62,7 @@ class CoralMaskDataset(Dataset):
         except Exception:
             pass
 
-        img = img.resize((self.width, self.height), Image.BILINEAR)
         mask_pil = Image.fromarray(binary_mask).resize((self.width, self.height), Image.NEAREST)
-        return self.transform_img(img), torch.from_numpy(np.array(mask_pil, dtype=np.int64))
+        del binary_mask
+        mask_tensor = torch.from_numpy(np.array(mask_pil, dtype=np.int64))
+        return self.transform_img(img), mask_tensor
