@@ -11,10 +11,14 @@ from eval_suite.utils import seed_worker, set_seed
 
 def evaluate_coralmask(backbone, data_dir: str, device: torch.device, dtype: torch.dtype,
                        batch_size: int = 16, num_workers: int = 4, seed: int = 42, epochs: int = 10,
-                       lr: float = 3e-3, width: int = 512, height: int = 512, max_train_samples=None):
+                       lr: float = 3e-3, width: int = 512, height: int = 512, max_train_samples=None,
+                       mean=None, std=None, test_manifest=None):
     set_seed(seed)
-    train_ds = CoralMaskDataset(data_dir, split="train", width=width, height=height, max_samples=max_train_samples)
-    test_ds = CoralMaskDataset(data_dir, split="test", width=width, height=height)
+    kwargs = {}
+    if mean is not None and std is not None:
+        kwargs = {"mean": mean, "std": std}
+    train_ds = CoralMaskDataset(data_dir, split="train", width=width, height=height, max_samples=max_train_samples, **kwargs)
+    test_ds = CoralMaskDataset(data_dir, split="test", width=width, height=height, test_manifest=test_manifest, **kwargs)
 
     g = torch.Generator().manual_seed(seed)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, worker_init_fn=seed_worker, generator=g)

@@ -72,7 +72,11 @@ def main():
     prev_sd, prev_label = None, None
     for c in ckpts:
         label = Path(c).stem
-        sd = load_state_dict(c, args.model_id, device)
+        try:
+            sd = load_state_dict(c, args.model_id, device)
+        except Exception as e:
+            print(f"{label:45s}  ⚠️  SKIPPED -- failed to load ({e})")
+            continue
         d, n = relative_drift(ref_sd, sd)
         step_str = ""
         if prev_sd is not None:

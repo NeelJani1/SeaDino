@@ -11,10 +11,13 @@ from eval_suite.utils import seed_worker, set_seed
 
 def evaluate_coralscapes(backbone, train_split, val_split, num_classes: int, device: torch.device, dtype: torch.dtype,
                          batch_size: int = 8, num_workers: int = 4, seed: int = 42, epochs: int = 10,
-                         lr: float = 3e-3, width: int = 896, height: int = 448):
+                         lr: float = 3e-3, width: int = 896, height: int = 448, mean=None, std=None):
     set_seed(seed)
-    train_ds = CoralscapesDataset(train_split, width=width, height=height)
-    val_ds = CoralscapesDataset(val_split, width=width, height=height)
+    kwargs = {}
+    if mean is not None and std is not None:
+        kwargs = {"mean": mean, "std": std}
+    train_ds = CoralscapesDataset(train_split, width=width, height=height, **kwargs)
+    val_ds = CoralscapesDataset(val_split, width=width, height=height, **kwargs)
 
     g = torch.Generator().manual_seed(seed)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, worker_init_fn=seed_worker, generator=g)
