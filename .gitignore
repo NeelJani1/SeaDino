@@ -6,10 +6,11 @@ leakage_inspection/
 *.jpeg
 *.svg
 
-# Benchmark spatial splits are tracked; all other run CSVs and NPZ caches are ignored
+# Benchmark spatial splits & master results are tracked; all other run CSVs and NPZ caches are ignored
 *.csv
 !german_bank_2010_spatial_split.csv
 !substrate_depth_2_spatial_split.csv
+!master_coral_all_epochs_full_clean.csv
 *.npz
 
 # Python bytecode & cache

@@ -119,6 +119,12 @@ def main():
     out_txt.write_text("\n".join(leaked_test_stems))
     print(f"\nSaved {len(leaked_test_stems)} contaminated test stems to: {out_txt.resolve()}")
     print("Use this file to filter test set and create CoralMask-Clean.")
+
+    # Export train leakage IDs
+    leaked_train_stems = sorted(list(set(Path(m[0]).stem for m in train_matches)))
+    out_train_txt = Path("coralmask_train_leakage_ids.txt")
+    out_train_txt.write_text("\n".join(leaked_train_stems))
+    print(f"Saved {len(leaked_train_stems)} contaminated train stems to: {out_train_txt.resolve()}")
     print("=" * 80)
 
 
