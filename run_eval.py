@@ -32,25 +32,27 @@ from eval_suite.utils import plot_and_save_confusion_matrix, set_seed
 
 
 def ensure_spatial_split_symlinks():
-    """Ensures data/ has symlinks to the leakage-free spatial split files if present in data/splits or root."""
+    """Ensures data/ has symlinks to the leakage-free spatial split files if present in data/benchmarks, data/splits, or root."""
     try:
         from eval_suite.config import REPO_ROOT, DATA_DIR
         data_dir = DATA_DIR
         data_dir.mkdir(parents=True, exist_ok=True)
 
         links = [
-            ("german_bank_2010_spatial_split.csv", "german_bank_spatial_split.csv"),
-            ("substrate_depth_2_spatial_split.csv", "substrate_spatial_split.csv"),
+            ("german_bank_2010_spatial_split.csv", "german_bank_spatial_split.csv", "benchmarks/german_bank"),
+            ("substrate_depth_2_spatial_split.csv", "substrate_spatial_split.csv", "benchmarks/substrate"),
         ]
-        for src_name, dst_name in links:
-            # Check data/splits/ first, then repo data/splits/, then repo root
-            src = data_dir / "splits" / src_name
-            if not src.exists():
-                src = REPO_ROOT / "data" / "splits" / src_name
-            if not src.exists():
-                src = REPO_ROOT / src_name
+        for src_name, dst_name, rel_sub in links:
+            candidates = [
+                data_dir / rel_sub / src_name,
+                REPO_ROOT / "data" / rel_sub / src_name,
+                data_dir / "splits" / src_name,
+                REPO_ROOT / "data" / "splits" / src_name,
+                REPO_ROOT / src_name,
+            ]
+            src = next((c for c in candidates if c.exists()), None)
             dst = data_dir / dst_name
-            if src.exists() and not dst.exists():
+            if src and src.exists() and not dst.exists():
                 try:
                     os.symlink(src, dst)
                 except OSError:
@@ -67,9 +69,21 @@ def resolve_csv_path(path_str, fallback_names):
         return str(p)
     from eval_suite.config import REPO_ROOT, DATA_DIR
     search_dirs = [
+        DATA_DIR / "benchmarks" / "substrate",
+        DATA_DIR / "benchmarks" / "german_bank",
+        DATA_DIR / "benchmarks" / "coralmask",
+        DATA_DIR / "benchmarks" / "biota",
+        DATA_DIR / "benchmarks",
+        DATA_DIR / "training",
         DATA_DIR / "splits",
         DATA_DIR / "manifests",
         DATA_DIR,
+        REPO_ROOT / "data" / "benchmarks" / "substrate",
+        REPO_ROOT / "data" / "benchmarks" / "german_bank",
+        REPO_ROOT / "data" / "benchmarks" / "coralmask",
+        REPO_ROOT / "data" / "benchmarks" / "biota",
+        REPO_ROOT / "data" / "benchmarks",
+        REPO_ROOT / "data" / "training",
         REPO_ROOT / "data" / "splits",
         REPO_ROOT / "data" / "manifests",
         REPO_ROOT / "data",
@@ -78,7 +92,16 @@ def resolve_csv_path(path_str, fallback_names):
     env_data = os.getenv("SEADINO_DATA_DIR")
     if env_data and env_data.strip():
         env_p = Path(env_data.strip())
-        search_dirs.extend([env_p / "splits", env_p / "manifests", env_p])
+        search_dirs.extend([
+            env_p / "benchmarks" / "substrate",
+            env_p / "benchmarks" / "german_bank",
+            env_p / "benchmarks" / "coralmask",
+            env_p / "benchmarks" / "biota",
+            env_p / "benchmarks",
+            env_p / "splits",
+            env_p / "manifests",
+            env_p,
+        ])
 
     for fb in fallback_names:
         for sdir in search_dirs:

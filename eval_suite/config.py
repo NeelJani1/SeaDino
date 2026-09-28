@@ -68,10 +68,10 @@ def _resolve_coralmask_dir() -> str:
 
 
 def _resolve_biota_csv() -> str:
-    spatial_biota = _find_file("biota_spatial_split.csv", ["splits", ""])
+    spatial_biota = _find_file("biota_spatial_split.csv", ["benchmarks/biota", "splits", ""])
     if Path(spatial_biota).exists():
         return spatial_biota
-    raw_biota = _find_file("benthicnet_nn.csv", ["splits", ""])
+    raw_biota = _find_file("benthicnet_nn.csv", ["benchmarks/biota", "splits", ""])
     if Path(raw_biota).exists():
         return raw_biota
     env_biota = os.getenv("BIOTA_CSV")
@@ -80,16 +80,16 @@ def _resolve_biota_csv() -> str:
     default_server = "/home/njan320/Neel/BenthicNet/csvs/finalized_csvs/trainable/benthicnet_nn.csv"
     if Path(default_server).exists():
         return default_server
-    return str(DATA_DIR / "splits" / "biota_spatial_split.csv")
+    return str(DATA_DIR / "benchmarks" / "biota" / "biota_spatial_split.csv")
 
 
 DEFAULT_PATHS = {
     "benthic_img_root": _resolve_img_root(),
-    "substrate_csv": _find_file("substrate_depth_2_spatial_split.csv", ["splits", ""]),
-    "german_bank_csv": _find_file("german_bank_2010_spatial_split.csv", ["splits", ""]),
+    "substrate_csv": _find_file("substrate_depth_2_spatial_split.csv", ["benchmarks/substrate", "splits", ""]),
+    "german_bank_csv": _find_file("german_bank_2010_spatial_split.csv", ["benchmarks/german_bank", "splits", ""]),
     "biota_csv": _resolve_biota_csv(),
     "coralmask_dir": _resolve_coralmask_dir(),
-    "coralmask_test_manifest": _find_file("coralmask_test_clean.txt", ["manifests", ""]),
+    "coralmask_test_manifest": _find_file("coralmask_test_clean.txt", ["benchmarks/coralmask", "manifests", ""]),
     "model_id": "facebook/dinov3-vits16-pretrain-lvd1689m",
     "results_dir": str(RESULTS_DIR),
 }

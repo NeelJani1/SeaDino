@@ -286,9 +286,14 @@ SeaDino/
 │   ├── benchmarks/                    # Evaluation probes (knn, linear, coralmask, biota)
 │   └── datasets/                      # PyTorch dataset implementations
 │
-└── data/                              # Decontaminated splits and benchmark manifests
-    ├── splits/                        # Spatial buffer splits (Substrate, German Bank, Biota)
-    └── manifests/                     # CoralMask clean test manifests & leakage IDs
+└── data/                              # Benchmark splits and pretraining metadata
+    ├── benchmarks/                    # Dedicated directories per downstream task
+    │   ├── substrate/                 # Spatial splits (Substrate Depth 2)
+    │   ├── german_bank/               # Spatial splits (German Bank 2010)
+    │   ├── coralmask/                 # Clean manifests & perceptual leakage IDs
+    │   └── biota/                     # Spatial splits (BenthicNet Biota)
+    └── training/                      # Pretraining WebDataset shard specifications
+        └── README.md                  # Shard layout & deduplication hash instructions
 ```
 
 ---
