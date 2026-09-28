@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """Perceptual Hash Threshold Sensitivity Sweep (d in [0, 10]) for CoralMask vs BenthicNet Shards."""
 
+import os
+import sys
 from pathlib import Path
 import numpy as np
 from PIL import Image
 import imagehash
 from tqdm import tqdm
 
-SHARD_NPZ = Path("/home/njan320/SeaDino/benthicnet_shard_hashes.npz")
-CM_TEST_DIR = Path("/home/njan320/Neel/CoralMaskv1/CoralMask/test/images")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from eval_suite.config import DATA_DIR, DEFAULT_PATHS, _find_file
+
+SHARD_NPZ = Path(_find_file("benthicnet_shard_hashes.npz", ["manifests", ""]))
+CM_TEST_DIR = Path(DEFAULT_PATHS["coralmask_dir"]) / "test" / "images"
 
 print(f"Loading shard hashes from {SHARD_NPZ}...")
 shard_data = np.load(SHARD_NPZ)
@@ -55,17 +63,19 @@ for d in range(0, 11):
 print("=" * 80)
 
 # Save test min distances
-out_npz = Path("coralmask_test_min_dists.npz")
+manifest_dir = DATA_DIR / "manifests"
+manifest_dir.mkdir(parents=True, exist_ok=True)
+out_npz = manifest_dir / "coralmask_test_min_dists.npz"
 file_stems = [p.stem for p in test_files]
 np.savez(out_npz, stems=file_stems, min_dists=min_dists)
 print(f"\nSaved test distance distribution to: {out_npz}")
 
 # Materialize Clean Test Split (N = 823)
-leaked_file = Path("coralmask_test_leakage_ids.txt")
+leaked_file = Path(_find_file("coralmask_test_leakage_ids.txt", ["manifests", ""]))
 if leaked_file.exists():
     leaked_ids = set(leaked_file.read_text().split())
     clean_test_imgs = [p for p in test_files if p.stem not in leaked_ids]
-    clean_manifest = Path("coralmask_test_clean.txt")
+    clean_manifest = manifest_dir / "coralmask_test_clean.txt"
     clean_manifest.write_text("\n".join(str(p) for p in clean_test_imgs))
     print(f"CoralMask-Clean test manifest written to: {clean_manifest}")
     print(f"  Total Clean Test Images: {len(clean_test_imgs)} / {len(test_files)} (Excluded {len(leaked_ids)} leaked images)")

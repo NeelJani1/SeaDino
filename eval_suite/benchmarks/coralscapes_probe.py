@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+
 from eval_suite.datasets.coralscapes import CoralscapesDataset
 from eval_suite.models import LinearSegmenter
 from eval_suite.utils import seed_worker, set_seed
@@ -28,20 +30,26 @@ def evaluate_coralscapes(backbone, train_split, val_split, num_classes: int, dev
     optimizer = torch.optim.AdamW(model.head.parameters(), lr=lr, weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss(ignore_index=255)
 
+    print(f"      [Coralscapes] Training linear probe ({epochs} epochs, {len(train_ds):,} train samples, {len(val_ds):,} val samples)...")
     best_miou, best_pix_acc = 0.0, 0.0
     for ep in range(1, epochs + 1):
         model.head.train()
-        for img, target in train_loader:
+        total_loss = 0.0
+        pbar = tqdm(train_loader, desc=f"      Epoch {ep:2d}/{epochs} [Train]", leave=False)
+        for img, target in pbar:
             img, target = img.to(device=device, dtype=dtype), target.to(device=device)
             optimizer.zero_grad()
             loss = criterion(model(img, out_size=out_size), target)
             loss.backward()
             optimizer.step()
+            total_loss += loss.item()
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+        avg_loss = total_loss / max(1, len(train_loader))
 
         model.eval()
         conf_matrix = np.zeros((num_classes, num_classes), dtype=np.int64)
         with torch.no_grad():
-            for img, target in val_loader:
+            for img, target in tqdm(val_loader, desc=f"      Epoch {ep:2d}/{epochs} [Eval]", leave=False):
                 img = img.to(device=device, dtype=dtype)
                 logits = model(img, out_size=out_size)
                 preds = torch.argmax(logits, dim=1).cpu().numpy()
@@ -59,4 +67,7 @@ def evaluate_coralscapes(backbone, train_split, val_split, num_classes: int, dev
         if miou > best_miou:
             best_miou, best_pix_acc = miou, pix_acc
 
+        print(f"      Epoch {ep:2d}/{epochs} - Loss: {avg_loss:.4f} | Val mIoU: {miou:.2f}% | Pix Acc: {pix_acc:.2f}%")
+
+    print(f"      ==> Best Coralscapes mIoU: {best_miou:.2f}% | Pix Acc: {pix_acc:.2f}%")
     return {"coralscapes_mIoU": best_miou, "coralscapes_pixel_acc": best_pix_acc}

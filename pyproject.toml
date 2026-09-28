@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seadino"
+version = "0.1.0"
+description = "Physics-Informed Self-Supervised Vision Foundation Models for Marine & Benthic Imagery"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Neel Jani", email = "njan320@aucklanduni.ac.nz" }
+]
+keywords = [
+    "deep-learning",
+    "self-supervised-learning",
+    "vision-transformer",
+    "dinov3",
+    "marine-robotics",
+    "benthic-mapping",
+    "ocean-optics"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: GIS",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "transformers>=4.40.0",
+    "timm>=0.9.16",
+    "datasets>=2.18.0",
+    "huggingface_hub>=0.22.0",
+    "webdataset>=0.2.86",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "pandas>=2.0.0",
+    "scikit-learn>=1.3.0",
+    "Pillow>=10.0.0",
+    "imagehash>=4.3.1",
+    "opencv-python-headless>=4.8.0",
+    "pycocotools>=2.0.7",
+    "wandb>=0.16.0",
+    "tqdm>=4.66.0",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+]
+
+[project.scripts]
+seadino-eval = "run_eval:main"
+seadino-train = "ssl_train:main"
+
+[tool.setuptools]
+py-modules = ["ssl_train", "run_eval"]
+
+[tool.setuptools.packages.find]
+include = ["eval_suite*"]

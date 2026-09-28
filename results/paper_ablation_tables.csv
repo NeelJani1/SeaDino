@@ -1,0 +1,24 @@
+Table 1: Controlled Marine Physics Ablation,,,,,,,,
+Downstream Task,Domain Shift,Evaluation Metric,w/ Physics (Ep 8),No Physics (Ep 8),Delta (Ep 8),w/ Physics (Ep 14),No Physics (Ep 14),Delta (Ep 14)
+Substrate Depth 2,ID (Out-of-Transect),k-NN (Macro-F1),54.41%,53.55%,+0.86%,54.94%,54.10%,+0.84%
+German Bank 2010,ID (Out-of-Transect),k-NN (Macro-F1),68.70%,67.81%,+0.89%,69.86%,68.75%,+1.11%
+Coralscapes,OOD (Zero-Shot),Linear (mIoU),26.17%,25.54%,+0.63%,26.01%,25.23%,+0.78%
+CoralMask-Clean,OOD (Zero-Shot),Linear (Coral-IoU),72.87%,72.70%,+0.17%,73.03%,72.68%,+0.35%
+
+,,,,,,,,
+Table 2: Progressive SeaDino Pipeline Ablation (Fixed at Epoch 14),,,,,,,,
+Pretraining Configuration,Substrate Depth 2 ID (Macro-F1),German Bank 2010 ID (Macro-F1),Coralscapes OOD (mIoU),CoralMask-Clean OOD (Coral-IoU),,,,
+1. No Pretraining (Baseline DINOv3),57.74%,79.72%,23.31%,54.19%,,,,
+2. Official Augs + No Pixel Loss,54.42%,73.50%,24.11%,72.66%,,,,
+3. Official Augs + Pixel Loss,52.53%,65.39%,24.93%,72.72%,,,,
+4. Marine Augs (No Physics) + Pixel Loss,54.10%,68.75%,25.23%,72.68%,,,,
+5. Marine Augs + Physics + Pixel Loss,54.94%,69.86%,26.01%,73.03%,,,,
+
+,,,,,,,,
+Table 3: Extended Stage 2 Pretraining & Convergence Sweep (Gram Matrix Objective),,,,,,,,
+Pretraining Phase / Checkpoint,Total SSL Epochs,Objective / Configuration,German Bank 2010 ID (Macro-F1),Coralscapes OOD (mIoU),Coralscapes Pixel Acc (%),Characterization,,
+Off-the-shelf DINOv3,0,No pretraining (ImageNet baseline),79.76%,23.31%,61.20%,Untrained anchor,,
+Stage 1: lr_2e-4_with_pixel (Ep 14),14,Stage 1 Best (Physics + Pixel Loss),66.18%,26.24%,61.20%,Stage 1 Peak & Stage 2 Warm-start,,
+Stage 2: stage2_gram (Best / Ep 19-20),19,Stage 2 Gram Matrix Fine-tuning,66.75%,26.30%,61.27%,Global Peak Coralscapes mIoU (+2.99 pt vs baseline),,
+Stage 2: stage2_gram (Ep 44),44,Stage 2 Gram Matrix Fine-tuning,67.97%,26.13%,61.23%,Peak German Bank F1 in Stage 2,,
+Stage 2: stage2_gram (Final / Ep 49),49,Stage 2 Gram Matrix Fine-tuning,67.35%,26.06%,61.19%,Long-run saturation / stability plateau,,

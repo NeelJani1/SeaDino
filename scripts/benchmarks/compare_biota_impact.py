@@ -1,28 +1,38 @@
 #!/usr/bin/env python3
 """
-Task 4: Quantify the Impact of Spatial Leakage
-----------------------------------------------
+Task 4: Quantify the Impact of Spatial Leakage for Biota
+--------------------------------------------------------
 Runs run_eval.py on both:
   1. The Original Leaky Split
-  2. The New Spatially Isolated Split (with 100m/50m buffer)
+  2. The New Spatially Isolated Split (with 250m/50m buffer)
 
 Then computes and displays the exact before/after deltas for:
   - Off-the-shelf DINOv3 (zero-shot foundation baseline)
-  - Trained SeaDino Checkpoint (e.g. stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-best.ckpt)
+  - Trained SeaDino Checkpoint
 """
 
 import os
 import sys
+from pathlib import Path
 import subprocess
 import pandas as pd
 
-ORIGINAL_SUBSTRATE_CSV = "/home/njan320/Neel/BenthicNet/csvs/finalized_csvs/trainable/one_hots/substrate_depth_2/substrate_depth_2_data.csv"
-ORIGINAL_GERMAN_BANK_CSV = "/home/njan320/Neel/BenthicNet/csvs/finalized_csvs/trainable/one_hots/german_bank_2010/german_bank_2010_data.csv"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-SPATIAL_SUBSTRATE_CSV = "/home/njan320/SeaDino/substrate_depth_2_spatial_split.csv"
-SPATIAL_GERMAN_BANK_CSV = "/home/njan320/SeaDino/german_bank_2010_spatial_split.csv"
+from eval_suite.config import DATA_DIR, RESULTS_DIR, _find_file, DEFAULT_PATHS
 
-DEFAULT_CKPT = "/home/njan320/stage1_marine_with_physics/benthic-ssl-epoch=03-ssl_loss=12.79.ckpt"
+ORIGINAL_BIOTA_CSV = os.getenv(
+    "ORIGINAL_BIOTA_CSV",
+    "/home/njan320/Neel/BenthicNet/csvs/finalized_csvs/trainable/benthicnet_nn.csv"
+)
+SPATIAL_BIOTA_CSV = _find_file("biota_spatial_split.csv", ["splits", ""])
+DEFAULT_CKPT = os.getenv(
+    "DEFAULT_CKPT",
+    str(REPO_ROOT / "stage1_marine_with_physics" / "benthic-ssl-epoch=03-ssl_loss=12.79.ckpt")
+)
+RUN_EVAL_SCRIPT = str(REPO_ROOT / "run_eval.py")
 
 
 def run_cmd(cmd):
@@ -40,40 +50,38 @@ def main():
     print(f"Target Checkpoint: {ckpt_path}")
 
     # Check if spatial splits exist
-    if not os.path.exists(SPATIAL_SUBSTRATE_CSV) or not os.path.exists(SPATIAL_GERMAN_BANK_CSV):
-        print(f"Spatial splits not found! Please run solve_benthicnet_leakage.py first.")
+    if not os.path.exists(SPATIAL_BIOTA_CSV):
+        print(f"Spatial split not found! Please run solve_biota_leakage.py first.")
         sys.exit(1)
 
-    out_orig = "eval_results_original_split.csv"
-    out_spatial = "eval_results_spatial_split.csv"
+    out_orig = str(RESULTS_DIR / "eval_results_biota_original_split.csv")
+    out_spatial = str(RESULTS_DIR / "eval_results_biota_spatial_split.csv")
 
     # 1. Evaluate on Original Split
     print("\n>>> STEP 1: Evaluating on ORIGINAL Split...")
     run_cmd([
-        sys.executable, "run_eval.py",
+        sys.executable, RUN_EVAL_SCRIPT,
         "--include_off_the_shelf",
         "--checkpoints", ckpt_path,
-        "--datasets", "substrate", "german_bank",
-        "--substrate_csv", ORIGINAL_SUBSTRATE_CSV,
-        "--german_bank_csv", ORIGINAL_GERMAN_BANK_CSV,
+        "--datasets", "biota",
+        "--biota_csv", ORIGINAL_BIOTA_CSV,
         "--output_csv", out_orig,
     ])
 
     # 2. Evaluate on Spatial Split
     print("\n>>> STEP 2: Evaluating on SPATIAL Split (Buffer Protected)...")
     run_cmd([
-        sys.executable, "run_eval.py",
+        sys.executable, RUN_EVAL_SCRIPT,
         "--include_off_the_shelf",
         "--checkpoints", ckpt_path,
-        "--datasets", "substrate", "german_bank",
-        "--substrate_csv", SPATIAL_SUBSTRATE_CSV,
-        "--german_bank_csv", SPATIAL_GERMAN_BANK_CSV,
+        "--datasets", "biota",
+        "--biota_csv", SPATIAL_BIOTA_CSV,
         "--output_csv", out_spatial,
     ])
 
     # 3. Compute and Print Deltas
     print("\n" + "=" * 90)
-    print("TASK 4 IMPACT QUANTIFICATION: ORIGINAL VS SPATIAL SPLIT")
+    print("TASK 4 IMPACT QUANTIFICATION: ORIGINAL VS SPATIAL SPLIT (BIOTA)")
     print("=" * 90)
 
     df_orig = pd.read_csv(out_orig)
@@ -95,10 +103,9 @@ def main():
         return float(str(val).replace("%", "").strip())
 
     metrics = [
-        ("Substrate Acc (%)", "Substrate Accuracy"),
-        ("Substrate F1-Macro (%)", "Substrate Macro-F1"),
-        ("German Bank Acc (%)", "German Bank Accuracy"),
-        ("German Bank F1-Macro (%)", "German Bank Macro-F1"),
+        ("Biota Lin mAP (%)", "Biota Linear mAP"),
+        ("Biota Lin F1-Macro (%)", "Biota Linear Macro-F1"),
+        ("Biota kNN mAP (%)", "Biota kNN mAP"),
     ]
 
     for idx in range(len(df_orig)):
@@ -112,7 +119,6 @@ def main():
                     delta = v_spat - v_orig
                     sign = "+" if delta >= 0 else ""
                     print(f"  {label:<24}: {v_orig:>6.2f}% -> {v_spat:>6.2f}%  (Delta: {sign}{delta:>6.2f}%)")
-
 
 if __name__ == "__main__":
     main()
