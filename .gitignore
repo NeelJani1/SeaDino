@@ -72,18 +72,14 @@ leakage_inspection/
 !docs/**/*.jpg
 !docs/**/*.svg
 
-# Track Key Clean Splits and Published Master Tables
+# Documentation & Evaluation Results (Stored on external drive, ignored in Git)
+results/
+docs/
+
+# Track Key Clean Splits
 *.csv
-!substrate_depth_2_spatial_split.csv
-!german_bank_2010_spatial_split.csv
-!paper_ablation_tables.csv
-!master_coral_all_epochs_full_clean.csv
-!master_substrate_germanbank_all_epochs_clean.csv
-!stage2_spotcheck.csv
 !data/splits/*.csv
 !data/manifests/*.txt
-!results/*.csv
-!results/**/*.csv
 
 # Exclude Large Spatial Split Datafiles (>20MB) from git history
 biota_spatial_split.csv
