@@ -251,7 +251,7 @@ python run_eval.py \
     --coralmask_epochs 6 \
     --resume \
     --use_bf16 \
-    --output_csv results/benchmark_evaluation.csv
+    --output_csv benchmark_evaluation.csv
 ```
 
 ### External Storage & Environment Overrides
@@ -286,23 +286,9 @@ SeaDino/
 │   ├── benchmarks/                    # Evaluation probes (knn, linear, coralmask, biota)
 │   └── datasets/                      # PyTorch dataset implementations
 │
-├── data/                              # Decontaminated splits and benchmark manifests
-│   ├── splits/                        # Spatial buffer splits (Substrate, German Bank, Biota)
-│   └── manifests/                     # CoralMask clean test manifests & leakage IDs
-│
-├── results/                           # Publication master tables and sweep logs
-│   ├── paper_ablation_tables.csv      # Publication Tables 1, 2, and 3
-│   ├── master_coral_all_epochs_full_clean.csv
-│   └── master_substrate_germanbank_all_epochs_clean.csv
-│
-├── scripts/                           # Tooling, audits, and migration scripts
-│   ├── organize_repo.py               # Automated repository workspace cleaner
-│   ├── migrate_to_external_drive.py   # Large checkpoint vault external migration tool
-│   ├── audits/                        # Haversine spatial split & pHash audit scripts
-│   ├── benchmarks/                    # Impact comparison & baseline probes
-│   └── visualization/                 # Augmentation simulators and gallery embedders
-│
-└── docs/                              # Technical briefs and investigation reports
+└── data/                              # Decontaminated splits and benchmark manifests
+    ├── splits/                        # Spatial buffer splits (Substrate, German Bank, Biota)
+    └── manifests/                     # CoralMask clean test manifests & leakage IDs
 ```
 
 ---

@@ -351,6 +351,7 @@ def main():
             # Incremental save so progress is never lost
             if args.output_csv:
                 try:
+                    Path(args.output_csv).parent.mkdir(parents=True, exist_ok=True)
                     file_exists = os.path.isfile(args.output_csv)
                     fieldnames = list(row.keys())
                     if file_exists:
