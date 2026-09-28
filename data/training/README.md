@@ -20,7 +20,7 @@ SeaDino is pretrained on **BenthicNet**, an extensive collection of seafloor ima
 Pretraining is executed via `ssl_train.py` using high-throughput streaming through PyTorch:
 
 ```bash
-torchrun --nproc_per_node=4 ssl_train.py \
+python ssl_train.py \
     --use_webdataset \
     --shard_dir /path/to/benthicnet_shards \
     --output_dir ./checkpoints/seadino_vits16_stage1 \

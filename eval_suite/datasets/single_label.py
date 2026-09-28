@@ -15,7 +15,12 @@ class SingleLabelDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, retries: int = 0):
+        if retries >= 15:
+            raise FileNotFoundError(
+                f"Failed to find readable image after {retries} adjacent retries starting at index {idx}. "
+                "Please verify that the benthic image root directory contains the expected image files."
+            )
         path, label = self.samples[idx]
         try:
             with Image.open(path) as img:
@@ -29,7 +34,7 @@ class SingleLabelDataset(Dataset):
                     img = img.convert("RGB")
             except Exception:
                 # If file is one of the 13 missing images on disk, safely fetch adjacent sample
-                return self.__getitem__((idx + 1) % len(self.samples))
+                return self.__getitem__((idx + 1) % len(self.samples), retries=retries + 1)
 
         if self.transform is not None:
             img = self.transform(img)
@@ -38,6 +43,12 @@ class SingleLabelDataset(Dataset):
 
 
 def prepare_single_label_data(csv_path: str, image_root: str, label_col: str):
+    import os
+    if not os.path.isdir(image_root):
+        raise FileNotFoundError(
+            f"Benthic image root '{image_root}' does not exist or is not a directory. "
+            f"Please pass a valid --benthic_img_root or set the BENTHIC_IMG_ROOT environment variable."
+        )
     df = pd.read_csv(csv_path)
 
     def _parse(v):

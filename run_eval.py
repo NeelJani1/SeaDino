@@ -52,12 +52,18 @@ def ensure_spatial_split_symlinks():
             ]
             src = next((c for c in candidates if c.exists()), None)
             dst = data_dir / dst_name
-            if src and src.exists() and not dst.exists():
-                try:
-                    os.symlink(src, dst)
-                except OSError:
-                    import shutil
-                    shutil.copyfile(src, dst)
+            if src and src.exists():
+                if dst.is_symlink() or not dst.exists():
+                    try:
+                        dst.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                if not dst.exists():
+                    try:
+                        os.symlink(src, dst)
+                    except OSError:
+                        import shutil
+                        shutil.copyfile(src, dst)
     except Exception:
         pass
 
@@ -131,7 +137,7 @@ def main():
     p.add_argument("--german_bank_csv", type=str, default=DEFAULT_PATHS["german_bank_csv"])
     p.add_argument("--biota_csv", type=str, default=DEFAULT_PATHS["biota_csv"])
     p.add_argument("--coralmask_dir", type=str, default=DEFAULT_PATHS["coralmask_dir"])
-    p.add_argument("--coralmask_test_manifest", type=str, default=None,
+    p.add_argument("--coralmask_test_manifest", type=str, default=DEFAULT_PATHS["coralmask_test_manifest"],
                    help="Path to clean test manifest file for CoralMask (e.g. coralmask_test_clean.txt).")
     p.add_argument("--model_id", type=str, default=DEFAULT_PATHS["model_id"])
 
@@ -149,7 +155,8 @@ def main():
     p.add_argument("--seed", type=int, default=42, help="Fixed random seed for determinism.")
     p.add_argument("--batch_size", type=int, default=256)
     p.add_argument("--num_workers", type=int, default=8)
-    p.add_argument("--save_cm_plots", action="store_true", default=True)
+    p.add_argument("--save_cm_plots", action=argparse.BooleanOptionalAction, default=True,
+                   help="Save confusion matrix plots (default: True; use --no-save_cm_plots to disable).")
     p.add_argument("--cm_output_dir", type=str, default="eval_output/confusion_matrices")
     p.add_argument("--output_csv", type=str, default="master_benchmark_results.csv")
     args = p.parse_args()
@@ -234,7 +241,7 @@ def main():
     # 2. Setup Jobs
     jobs = []
     for c in args.checkpoints:
-        jobs.append((Path(c).parent.name, c))
+        jobs.append((f"{Path(c).parent.name}/{Path(c).name}", c))
     for d in args.checkpoint_dirs:
         found_ckpts = sorted(glob.glob(str(Path(d) / "*.ckpt")))
         # Auto-redirect ssl_off to ssl_off_pix if empty
