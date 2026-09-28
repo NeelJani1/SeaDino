@@ -17,15 +17,18 @@ def evaluate_biota(model, train_samples, test_samples, num_classes, transform, d
     train_ds = BiotaDataset(train_samples, num_classes, transform=transform)
     test_ds = BiotaDataset(test_samples, num_classes, transform=transform)
 
+    loader_kwargs = {"pin_memory": True}
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = 2
+
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-        pin_memory=True, persistent_workers=True, prefetch_factor=2,
-        worker_init_fn=seed_worker, generator=g
+        worker_init_fn=seed_worker, generator=g, **loader_kwargs
     )
     test_loader = DataLoader(
         test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-        pin_memory=True, persistent_workers=True, prefetch_factor=2,
-        worker_init_fn=seed_worker, generator=g
+        worker_init_fn=seed_worker, generator=g, **loader_kwargs
     )
 
     @torch.no_grad()

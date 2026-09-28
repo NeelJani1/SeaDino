@@ -6,7 +6,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![DINOv3](https://img.shields.io/badge/Backbone-DINOv3--ViT--S%2F16-0081FB)](https://github.com/facebookresearch/dinov3)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Benchmark](https://img.shields.io/badge/Benchmark-CoralMask--Clean-orange.svg)](#benchmark-decontamination--coralmask-clean)
+[![Benchmark](https://img.shields.io/badge/Benchmark-CoralMask--Clean-orange.svg)](#3-cross-dataset-decontamination-coralmask-clean)
 
 **SeaDino** adapts Meta's state-of-the-art **DINOv3** foundation architecture to underwater and benthic seafloor imagery. By incorporating physically-grounded optical degradation models, empirical marine domain normalization, and rigorous spatial-autocorrelation decontamination, SeaDino establishes new representations for benthic habitat mapping, coral reef semantic segmentation, and substrate classification.
 
@@ -120,16 +120,16 @@ To evaluate true generalization to unseen seafloor, SeaDino establishes spatial 
 - **German Bank 2010:** $250\text{m}$ grid cells, **$50\text{m}$ buffer moat**. Discarded 233 images (7.3%). Kept 2,310 Train / 638 Test. Min distance in clean split: **$50.20\text{m}$ (0% leakage)**.
 - **Biota Multi-Label:** $250\text{m}$ grid cells, **$50\text{m}$ buffer moat**. Discarded 41,539 images (29.1%). Kept 63,574 Train / 37,500 Test.
 
-Manifest files are located in `data/splits/`:
-- [`substrate_depth_2_spatial_split.csv`](data/splits/substrate_depth_2_spatial_split.csv)
-- [`german_bank_2010_spatial_split.csv`](data/splits/german_bank_2010_spatial_split.csv)
-- [`biota_spatial_split.csv`](data/splits/biota_spatial_split.csv)
+Manifest files are located in `data/benchmarks/`:
+- [`substrate_depth_2_spatial_split.csv`](data/benchmarks/substrate/substrate_depth_2_spatial_split.csv)
+- [`german_bank_2010_spatial_split.csv`](data/benchmarks/german_bank/german_bank_2010_spatial_split.csv)
+- [`biota_spatial_split.csv`](data/benchmarks/biota/biota_spatial_split.csv)
 
 ### 3. Cross-Dataset Decontamination: CoralMask-Clean
 Perceptual hash auditing (pHash, 64-bit) of all 830 CoralMask test images against our 189,101 SSL pretraining shards revealed that **7 test images** were exact duplicates from Catlin Seaview Survey transects. A Hamming distance sweep ($d \in [0, 10]$) confirmed a clear plateau from $d=6$ to $d=9$ isolating the duplicates.
 SeaDino provides:
-- [`coralmask_test_clean.txt`](data/manifests/coralmask_test_clean.txt): Verified decontaminated test manifest ($N = 823$).
-- [`coralmask_test_leakage_ids.txt`](data/manifests/coralmask_test_leakage_ids.txt): The 7 isolated duplicate image stems.
+- [`coralmask_test_clean.txt`](data/benchmarks/coralmask/coralmask_test_clean.txt): Verified decontaminated test manifest ($N = 823$).
+- [`coralmask_test_leakage_ids.txt`](data/benchmarks/coralmask/coralmask_test_leakage_ids.txt): The 7 isolated duplicate image stems.
 
 ---
 
@@ -203,10 +203,10 @@ pip install -e .
 
 ## Pretraining with SeaDino
 
-Pretraining streams WebDataset `.tar` shards via [`ssl_train.py`](ssl_train.py) and supports distributed training via `torchrun`:
+Pretraining streams WebDataset `.tar` shards via [`ssl_train.py`](ssl_train.py):
 
 ```bash
-torchrun --nproc_per_node=4 ssl_train.py \
+python ssl_train.py \
     --use_webdataset \
     --shard_dir /path/to/benthicnet_shards \
     --output_dir ./checkpoints/seadino_vits16_stage1 \

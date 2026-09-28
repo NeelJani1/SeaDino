@@ -225,8 +225,11 @@ except ImportError:
     TENSORBOARD_AVAILABLE = False
 
 warnings.filterwarnings("ignore")
-import colorama
-colorama.init()
+try:
+    import colorama
+    colorama.init()
+except ImportError:
+    pass
 
 # ============================================================================
 # LAYER-WISE LR DECAY (official dinov3/train/param_groups.py)
@@ -1995,8 +1998,11 @@ class DINOTrainer:
     # ------------------------------------------------------------------
 
     if sys.platform == "win32":
-        import colorama
-        colorama.init()
+        try:
+            import colorama
+            colorama.init()
+        except ImportError:
+            pass
 
     def train_epoch(self, epoch: int) -> float:
         self.student.train()

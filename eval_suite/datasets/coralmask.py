@@ -24,9 +24,14 @@ class CoralMaskDataset(Dataset):
             with open(test_manifest, "r") as f:
                 manifest_paths = [Path(line.strip()) for line in f if line.strip()]
             for p in manifest_paths:
+                img_path = str(p)
+                if not os.path.isfile(img_path):
+                    local_img = os.path.join(self.img_dir, p.name)
+                    if os.path.isfile(local_img):
+                        img_path = local_img
                 json_path = os.path.join(self.json_dir, f"{p.stem}.json")
-                if os.path.isfile(json_path):
-                    self.samples.append((str(p), json_path))
+                if os.path.isfile(img_path) and os.path.isfile(json_path):
+                    self.samples.append((img_path, json_path))
         else:
             img_files = sorted([f for f in os.listdir(self.img_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
             for img_name in img_files:
