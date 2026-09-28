@@ -53,6 +53,11 @@ import torch
 import torchvision.transforms as T
 from PIL import Image
 
+# Add repository root to sys.path so ssl_train can be imported from subdirectories
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 # Robust import: try custom filename first, then standard training script name
 try:
     from ssl_train import get_transform, MaskingGenerator
@@ -62,8 +67,7 @@ except ImportError:
     except ImportError:
         sys.exit(
             "Error: Could not import 'get_transform'/'MaskingGenerator'. Ensure this "
-            "script is in the same directory as your DINOv3 training script (e.g. "
-            "DinoV3_abalation_V3.py or ssl_training.py)."
+            "script is in the same directory or child directory as your DINOv3 training script."
         )
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")

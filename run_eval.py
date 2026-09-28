@@ -32,10 +32,10 @@ from eval_suite.utils import plot_and_save_confusion_matrix, set_seed
 
 
 def ensure_spatial_split_symlinks():
-    """Ensures data/ has symlinks to the leakage-free spatial split files if present in root."""
+    """Ensures data/ has symlinks to the leakage-free spatial split files if present in data/splits or root."""
     try:
-        import shutil
-        data_dir = Path("/home/njan320/SeaDino/data")
+        from eval_suite.config import REPO_ROOT, DATA_DIR
+        data_dir = DATA_DIR
         data_dir.mkdir(parents=True, exist_ok=True)
 
         links = [
@@ -43,31 +43,51 @@ def ensure_spatial_split_symlinks():
             ("substrate_depth_2_spatial_split.csv", "substrate_spatial_split.csv"),
         ]
         for src_name, dst_name in links:
-            src = Path("/home/njan320/SeaDino") / src_name
+            # Check data/splits/ first, then repo data/splits/, then repo root
+            src = data_dir / "splits" / src_name
+            if not src.exists():
+                src = REPO_ROOT / "data" / "splits" / src_name
+            if not src.exists():
+                src = REPO_ROOT / src_name
             dst = data_dir / dst_name
             if src.exists() and not dst.exists():
                 try:
                     os.symlink(src, dst)
                 except OSError:
+                    import shutil
                     shutil.copyfile(src, dst)
     except Exception:
         pass
 
 
 def resolve_csv_path(path_str, fallback_names):
-    """Resolves CSV path, checking fallbacks if user-provided path does not exist."""
+    """Resolves CSV or manifest path across standard repo and external data locations."""
     p = Path(path_str)
     if p.exists():
         return str(p)
+    from eval_suite.config import REPO_ROOT, DATA_DIR
+    search_dirs = [
+        DATA_DIR / "splits",
+        DATA_DIR / "manifests",
+        DATA_DIR,
+        REPO_ROOT / "data" / "splits",
+        REPO_ROOT / "data" / "manifests",
+        REPO_ROOT / "data",
+        REPO_ROOT,
+    ]
+    env_data = os.getenv("SEADINO_DATA_DIR")
+    if env_data and env_data.strip():
+        env_p = Path(env_data.strip())
+        search_dirs.extend([env_p / "splits", env_p / "manifests", env_p])
+
     for fb in fallback_names:
-        for candidate in [
-            Path("/home/njan320/SeaDino") / fb,
-            Path("/home/njan320/SeaDino/data") / fb,
-            Path(fb),
-        ]:
-            if candidate.exists():
-                print(f"  [Path Resolver] '{path_str}' not found -> using '{candidate}'")
-                return str(candidate)
+        for sdir in search_dirs:
+            if not sdir.exists():
+                continue
+            cand = sdir / fb
+            if cand.exists():
+                print(f"  [Path Resolver] '{path_str}' not found -> using '{cand}'")
+                return str(cand.resolve())
     return str(p)
 
 
@@ -114,7 +134,7 @@ def main():
     if not args.checkpoints and not args.checkpoint_dirs and not args.include_off_the_shelf:
         sys.exit("Error: Please pass --checkpoints, --checkpoint_dirs (or --checkpoint_dir), or --include_off_the_shelf")
 
-    # Resolve CSV paths with graceful fallback
+    # Resolve CSV and manifest paths with graceful fallback
     args.substrate_csv = resolve_csv_path(
         args.substrate_csv,
         ["substrate_depth_2_spatial_split.csv", "substrate_spatial_split.csv"]
@@ -123,6 +143,26 @@ def main():
         args.german_bank_csv,
         ["german_bank_2010_spatial_split.csv", "german_bank_spatial_split.csv"]
     )
+    if args.biota_csv:
+        args.biota_csv = resolve_csv_path(
+            args.biota_csv,
+            ["biota_spatial_split.csv", "benthicnet_nn.csv"]
+        )
+    if args.coralmask_test_manifest:
+        args.coralmask_test_manifest = resolve_csv_path(
+            args.coralmask_test_manifest,
+            ["coralmask_test_clean.txt"]
+        )
+    else:
+        auto_cm = resolve_csv_path("coralmask_test_clean.txt", ["coralmask_test_clean.txt"])
+        if Path(auto_cm).exists():
+            args.coralmask_test_manifest = auto_cm
+            print(f"  [Manifest Resolver] Auto-detected clean test manifest -> '{args.coralmask_test_manifest}'")
+
+    if args.output_csv:
+        out_dir = Path(args.output_csv).parent
+        if str(out_dir) and not out_dir.exists():
+            out_dir.mkdir(parents=True, exist_ok=True)
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -284,6 +324,7 @@ def main():
                 cs_res = evaluate_coralscapes(model, cs_train, cs_val, cs_num_cls, device, dtype, batch_size=16, num_workers=args.num_workers, seed=args.seed, mean=active_mean, std=active_std)
                 row["Coralscapes mIoU (%)"] = f"{cs_res['coralscapes_mIoU']:.2f}%"
                 row["Coralscapes Pixel Acc (%)"] = f"{cs_res['coralscapes_pixel_acc']:.2f}%"
+                print(f"      Coralscapes mIoU: {cs_res['coralscapes_mIoU']:.2f}% | Pix Acc: {cs_res['coralscapes_pixel_acc']:.2f}%")
 
             # CoralMask
             if run_all or "coralmask" in selected:
@@ -299,6 +340,7 @@ def main():
                 )
                 row["CoralMask Coral-IoU (%)"] = f"{cm_res['coralmask_coral_iou']:.2f}%"
                 row["CoralMask mIoU (%)"] = f"{cm_res['coralmask_mIoU']:.2f}%"
+                print(f"      CoralMask mIoU: {cm_res['coralmask_mIoU']:.2f}% | Coral-IoU: {cm_res['coralmask_coral_iou']:.2f}%")
 
             del model
             if torch.cuda.is_available():

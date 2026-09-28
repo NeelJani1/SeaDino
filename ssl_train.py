@@ -2409,7 +2409,10 @@ def knn_validation_probe(trainer, args, logger, device, k=20, batch_size=64, knn
 # MAIN
 # ============================================================================
 
-def main(args):
+def main(args=None):
+    if args is None:
+        args = parse_args()
+
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)

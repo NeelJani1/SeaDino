@@ -15,8 +15,14 @@ import imagehash
 import numpy as np
 from tqdm import tqdm
 
-SHARD_DIR = "/home/njan320/ssl_pretrain_shards"  # Verify this path
-OUT_HASHES = Path("benthicnet_shard_hashes.npz")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from eval_suite.config import DATA_DIR
+
+SHARD_DIR = os.getenv("SSL_PRETRAIN_SHARDS", "/home/njan320/ssl_pretrain_shards")
+OUT_HASHES = DATA_DIR / "manifests" / "benthicnet_shard_hashes.npz"
 HASH_SIZE = 8
 NUM_WORKERS = max(1, os.cpu_count() - 2)
 

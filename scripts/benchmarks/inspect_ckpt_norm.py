@@ -2,27 +2,47 @@
 """Quick sanity inspector to check benthic_norm and loss across all 10 checkpoint arms."""
 
 import glob
+import os
+import sys
 from pathlib import Path
 import torch
 
-checkpoint_dirs = [
-    "/home/njan320/SeaDino/stage1_marine_with_physics_lr_1e-4_no_pixel",
-    "/home/njan320/SeaDino/stage1_marine_with_physics_lr_1e-5_with_pixel",
-    "/home/njan320/SeaDino/stage1_marine_with_physics_lr_2e-4_with_pixel",
-    "/home/njan320/SeaDino/stage1_marine_with_physics_lr_5e-4_with_pixel",
-    "/home/njan320/SeaDino/stage1_marine_with_physics_lr_1e-4_no_pixel_tau_99",
-    "/home/njan320/stage1_marine_with_physics",
-    "/home/njan320/Neel/stage1_marine_with_physics_lr_3e-4_pixel",
-    "/home/njan320/Neel/Checkpoints/stage1_marine_no_physics",
-    "/home/njan320/Neel/Checkpoints/ssl_off_pix",
-    "/home/njan320/Neel/Checkpoints/ssl_off_no_pix",
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EXTERNAL_VAULT = Path(os.getenv("SEADINO_EXTERNAL_VAULT", "/home/njan320/Neel/Checkpoints_wsl/checkpoints"))
+
+ARM_NAMES = [
+    "stage1_marine_with_physics_lr_1e-4_no_pixel",
+    "stage1_marine_with_physics_lr_1e-5_with_pixel",
+    "stage1_marine_with_physics_lr_2e-4_with_pixel",
+    "stage1_marine_with_physics_lr_5e-4_with_pixel",
+    "stage1_marine_with_physics_lr_1e-4_no_pixel_tau_99",
+    "stage1_marine_with_physics",
+    "stage1_marine_with_physics_lr_3e-4_pixel",
+    "stage1_marine_no_physics",
+    "ssl_off_pix",
+    "ssl_off_no_pix",
 ]
+
+
+def resolve_arm_dir(arm: str) -> Path:
+    candidates = [
+        EXTERNAL_VAULT / arm,
+        REPO_ROOT / arm,
+        Path("/home/njan320/Neel/Checkpoints") / arm,
+        Path("/home/njan320/Neel") / arm,
+        Path("/home/njan320") / arm,
+    ]
+    for c in candidates:
+        if c.exists() and c.is_dir():
+            return c
+    return candidates[0]
+
 
 print(f"{'Directory / Arm':<60} {'Epoch':<7} {'Loss':<8} {'benthic_norm':<12} {'Ckpt File'}")
 print("=" * 115)
 
-for d in checkpoint_dirs:
-    p_dir = Path(d)
+for arm in ARM_NAMES:
+    p_dir = resolve_arm_dir(arm)
     ckpts = sorted(p_dir.glob("*.ckpt"))
     if not ckpts:
         print(f"{p_dir.name:<60} [NO CHECKPOINTS FOUND]")

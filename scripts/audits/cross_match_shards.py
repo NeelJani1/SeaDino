@@ -5,6 +5,7 @@ Audits CoralMask Test & Train against the 189,101 BenthicNet SSL Shards.
 """
 
 import os
+import sys
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
@@ -12,10 +13,16 @@ from PIL import Image
 import imagehash
 from tqdm import tqdm
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from eval_suite.config import DATA_DIR, DEFAULT_PATHS, _find_file
+
 # --- CONFIGURATION ---
-SHARD_NPZ = Path("/home/njan320/SeaDino/benthicnet_shard_hashes.npz")
-CM_TEST_DIR = Path("/home/njan320/Neel/CoralMaskv1/CoralMask/test/images")
-CM_TRAIN_DIR = Path("/home/njan320/Neel/CoralMaskv1/CoralMask/train/images")
+SHARD_NPZ = Path(_find_file("benthicnet_shard_hashes.npz", ["manifests", ""]))
+CM_TEST_DIR = Path(DEFAULT_PATHS["coralmask_dir"]) / "test" / "images"
+CM_TRAIN_DIR = Path(DEFAULT_PATHS["coralmask_dir"]) / "train" / "images"
 
 HASH_SIZE = 8
 STRICT_THRESHOLD = 4   # Definite identical image
@@ -114,15 +121,17 @@ def main():
     print(f"   - Total Contaminated Train Images:         {len(set(m[0] for m in train_matches))}")
 
     # Export test leakage IDs for CoralMask-Clean
+    manifest_dir = DATA_DIR / "manifests"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
     leaked_test_stems = sorted(list(set(Path(m[0]).stem for m in test_matches)))
-    out_txt = Path("coralmask_test_leakage_ids.txt")
+    out_txt = manifest_dir / "coralmask_test_leakage_ids.txt"
     out_txt.write_text("\n".join(leaked_test_stems))
     print(f"\nSaved {len(leaked_test_stems)} contaminated test stems to: {out_txt.resolve()}")
     print("Use this file to filter test set and create CoralMask-Clean.")
 
     # Export train leakage IDs
     leaked_train_stems = sorted(list(set(Path(m[0]).stem for m in train_matches)))
-    out_train_txt = Path("coralmask_train_leakage_ids.txt")
+    out_train_txt = manifest_dir / "coralmask_train_leakage_ids.txt"
     out_train_txt.write_text("\n".join(leaked_train_stems))
     print(f"Saved {len(leaked_train_stems)} contaminated train stems to: {out_train_txt.resolve()}")
     print("=" * 80)

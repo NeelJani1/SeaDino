@@ -9,18 +9,25 @@ Task 3: Validate the new splits (spatial isolation, 0% leakage within buffer, cl
 
 import os
 import sys
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.neighbors import BallTree
 
-# Paths
-BASE_DIR = "/home/njan320"
-MASTER_CSV = f"{BASE_DIR}/Neel/BenthicNet/csvs/finalized_csvs/benthicnet_labelled.csv"
-SUBSTRATE_CSV = f"{BASE_DIR}/Neel/BenthicNet/csvs/finalized_csvs/trainable/one_hots/substrate_depth_2/substrate_depth_2_data.csv"
-GERMAN_BANK_CSV = f"{BASE_DIR}/Neel/BenthicNet/csvs/finalized_csvs/trainable/one_hots/german_bank_2010/german_bank_2010_data.csv"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-OUTPUT_SUBSTRATE_CSV = f"{BASE_DIR}/SeaDino/substrate_depth_2_spatial_split.csv"
-OUTPUT_GERMAN_BANK_CSV = f"{BASE_DIR}/SeaDino/german_bank_2010_spatial_split.csv"
+from eval_suite.config import DATA_DIR
+
+# Paths
+BASE_DIR = os.getenv("BENTHICNET_BASE_DIR", "/home/njan320")
+MASTER_CSV = os.getenv("MASTER_CSV", f"{BASE_DIR}/Neel/BenthicNet/csvs/finalized_csvs/benthicnet_labelled.csv")
+SUBSTRATE_CSV = os.getenv("SUBSTRATE_CSV", f"{BASE_DIR}/Neel/BenthicNet/csvs/finalized_csvs/trainable/one_hots/substrate_depth_2/substrate_depth_2_data.csv")
+GERMAN_BANK_CSV = os.getenv("GERMAN_BANK_CSV", f"{BASE_DIR}/Neel/BenthicNet/csvs/finalized_csvs/trainable/one_hots/german_bank_2010/german_bank_2010_data.csv")
+
+OUTPUT_SUBSTRATE_CSV = str(DATA_DIR / "splits" / "substrate_depth_2_spatial_split.csv")
+OUTPUT_GERMAN_BANK_CSV = str(DATA_DIR / "splits" / "german_bank_2010_spatial_split.csv")
 
 EARTH_RADIUS_M = 6_371_000.0
 

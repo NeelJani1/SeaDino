@@ -9,6 +9,7 @@ Computes:
 """
 
 import argparse
+import sys
 from pathlib import Path
 import numpy as np
 import torch
@@ -16,7 +17,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from eval_suite.config import DEFAULT_PATHS, IMAGENET_MEAN, IMAGENET_STD, BENTHIC_MEAN, BENTHIC_STD
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from eval_suite.config import DEFAULT_PATHS, IMAGENET_MEAN, IMAGENET_STD, BENTHIC_MEAN, BENTHIC_STD, _find_file
 from eval_suite.datasets.coralmask import CoralMaskDataset
 from eval_suite.models import LinearSegmenter, load_dinov3_backbone
 from eval_suite.utils import seed_worker, set_seed
@@ -27,7 +32,7 @@ def main():
     p.add_argument("--checkpoint", type=str, default=None,
                    help="Path to .ckpt file. Omit for off-the-shelf DINOv3 baseline.")
     p.add_argument("--coralmask_dir", type=str, default=DEFAULT_PATHS["coralmask_dir"])
-    p.add_argument("--leaked_ids_file", type=str, default="/home/njan320/SeaDino/coralmask_test_leakage_ids.txt")
+    p.add_argument("--leaked_ids_file", type=str, default=_find_file("coralmask_test_leakage_ids.txt", ["manifests", ""]))
     p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--num_workers", type=int, default=2)
     p.add_argument("--epochs", type=int, default=6)

@@ -1,0 +1,12 @@
+Model / Label,Epoch,German Bank Acc (%),German Bank F1-Macro (%),Coralscapes mIoU (%),Coralscapes Pixel Acc (%)
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-best.ckpt,0,76.80%,68.98%,23.45%,61.19%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=00-ssl_loss=13.65.ckpt,0,76.80%,68.98%,23.45%,61.19%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=00-ssl_loss=13.78.ckpt,0,76.80%,68.91%,23.51%,61.21%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=01-ssl_loss=12.03.ckpt,1,75.80%,67.62%,23.59%,61.16%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=02-ssl_loss=11.34.ckpt,2,75.80%,67.91%,23.75%,61.15%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=03-ssl_loss=11.11.ckpt,3,76.40%,68.68%,23.99%,61.09%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=05-ssl_loss=11.32.ckpt,5,71.80%,62.97%,24.31%,61.09%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=08-ssl_loss=11.39.ckpt,8,69.80%,61.58%,24.30%,61.23%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=11-ssl_loss=11.25.ckpt,11,69.80%,61.06%,24.34%,61.29%
+stage1_marine_with_physics_lr_1e-4_no_pixel/benthic-ssl-epoch=14-ssl_loss=11.31.ckpt,14,68.60%,60.10%,24.14%,61.30%
+off-the-shelf (no continued pretraining),-,77.20%,69.63%,23.31%,61.20%
