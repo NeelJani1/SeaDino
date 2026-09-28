@@ -1,3 +1,0 @@
-Model / Label,Epoch,Substrate Acc (%),Substrate F1-Macro (%),German Bank Acc (%),German Bank F1-Macro (%)
-stage1_marine_with_physics,3,80.51%,56.46%,78.37%,78.48%
-off-the-shelf (no continued pretraining),-,81.39%,57.98%,79.15%,79.53%

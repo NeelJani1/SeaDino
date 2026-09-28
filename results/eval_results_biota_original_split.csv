@@ -1,3 +1,0 @@
-Model / Label,Epoch,Norm,Biota Lin mAP (%),Biota Lin F1-Macro (%),Biota kNN mAP (%)
-stage1_marine_with_physics,3,ImageNet,22.34%,17.56%,24.50%
-off-the-shelf (no continued pretraining),-,ImageNet,22.47%,16.94%,24.45%
