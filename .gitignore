@@ -76,14 +76,20 @@ leakage_inspection/
 results/
 docs/
 
-# Track Key Clean Splits
+# Track Key Clean Benchmark Splits & Manifests
 *.csv
+!data/benchmarks/**/*.csv
+!data/benchmarks/**/*.txt
+!data/training/**/*.md
+!data/training/**/*.txt
+
+# Backward compatibility tracking
 !data/splits/*.csv
 !data/manifests/*.txt
 
 # Exclude Large Spatial Split Datafiles (>20MB) from git history
 biota_spatial_split.csv
 substrate_depth_2_data_*.csv
-data/splits/biota_spatial_split.csv
-data/splits/substrate_depth_2_data_*.csv
+**/biota_spatial_split.csv
+**/substrate_depth_2_data_*.csv
 
