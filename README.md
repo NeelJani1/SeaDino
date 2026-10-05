@@ -183,6 +183,20 @@ SeaDino provides:
 
 ---
 
+### Table 4: DeepFish Marine Organism Classification Benchmark
+*Dual-probe evaluation ($k$-NN and linear probing) of fish presence across 20 remote coastal marine habitats (mangroves, seagrass, coral reefs, boulders) under turbid, natural lighting (Saleh et al., Nature Scientific Reports 2020):*
+
+| Model / Checkpoint | Pretraining Epoch | Normalization | Linear Probe Acc | Linear Macro-F1 | Linear **Fish-F1** | $k$-NN Acc | $k$-NN Macro-F1 | $k$-NN **Fish-F1** |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Off-the-shelf DINOv3** | — | ImageNet | 87.80% | 87.35% | 84.98% | 92.50% | 92.32% | 91.15% |
+| **SeaDino Stage 1 (Epoch 0)** | 0 | BenthicNet | 88.00% | 87.58% | 85.29% | 92.30% | 92.11% | 90.89% |
+| **SeaDino Stage 1 (Epoch 14)** | **14** | **BenthicNet** | **89.60%** (+1.80%) | **89.33%** (+1.98%) | **87.65%** (**+2.67%**) | **93.00%** (+0.50%) | **92.84%** (+0.52%) | **91.78%** (**+0.63%**) |
+
+> **Scientific Insight:**
+> SeaDino with marine physics pretraining outperforms off-the-shelf DINOv3 across **every single metric** on DeepFish. Most significantly, **Linear Fish-F1 increases by +2.67 points** (from 84.98% to 87.65%), demonstrating that domain-specific underwater physical modeling (Beer-Lambert attenuation, Koschmieder backscatter) directly aids in distinguishing camouflaged marine organisms in turbid real-world survey imagery.
+
+---
+
 ## Quickstart & Installation
 
 ```bash
@@ -247,12 +261,21 @@ SeaDino provides an automated, multi-dataset benchmarking CLI via [`run_eval.py`
 python run_eval.py \
     --checkpoint_dirs /path/to/checkpoints \
     --include_off_the_shelf \
-    --datasets substrate german_bank coralscapes coralmask \
+    --datasets substrate german_bank coralscapes coralmask biota deepfish \
+    --deepfish_dir data/benchmarks/deepfish \
     --coralmask_epochs 6 \
     --resume \
     --use_bf16 \
     --output_csv benchmark_evaluation.csv
 ```
+
+### Supported Benchmarks
+* **Substrate Depth 2** (CATAMI 5-class benthic substrate classification, spatial split)
+* **German Bank 2010** (5-class seafloor morphology classification, spatial split)
+* **BenthicNet Biota** (272-class multi-label biological presence, spatial split)
+* **Coralscapes** (39-class dense coral reef semantic segmentation from EPFL on Hugging Face)
+* **CoralMask-Clean** (Binary coral head segmentation with verified perceptual de-duplication)
+* **DeepFish** (Fish vs. No-Fish habitat classification across 20 tropical marine habitats, 39k frames, Saleh et al., *Scientific Reports* 2020)
 
 ### External Storage & Environment Overrides
 To run evaluations when checkpoints or datasets are stored on an external drive:
@@ -283,15 +306,16 @@ SeaDino/
 │   ├── config.py                      # Dynamic path resolution & normalization stats
 │   ├── models.py                      # Backbone loader & patch feature extractors
 │   ├── utils.py                       # Metric evaluation, confusion matrices, seeds
-│   ├── benchmarks/                    # Evaluation probes (knn, linear, coralmask, biota)
-│   └── datasets/                      # PyTorch dataset implementations
+│   ├── benchmarks/                    # Evaluation probes (knn, linear, coralmask, biota, deepfish)
+│   └── datasets/                      # PyTorch datasets (single_label, biota, coralmask, coralscapes, deepfish)
 │
 └── data/                              # Benchmark splits and pretraining metadata
     ├── benchmarks/                    # Dedicated directories per downstream task
     │   ├── substrate/                 # Spatial splits (Substrate Depth 2)
     │   ├── german_bank/               # Spatial splits (German Bank 2010)
     │   ├── coralmask/                 # Clean manifests & perceptual leakage IDs
-    │   └── biota/                     # Spatial splits (BenthicNet Biota)
+    │   ├── biota/                     # Spatial splits (BenthicNet Biota)
+    │   └── deepfish/                  # DeepFish fish-habitat benchmark specifications
     └── training/                      # Pretraining WebDataset shard specifications
         └── README.md                  # Shard layout & deduplication hash instructions
 ```

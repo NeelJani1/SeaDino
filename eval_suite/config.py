@@ -83,6 +83,24 @@ def _resolve_biota_csv() -> str:
     return str(DATA_DIR / "benchmarks" / "biota" / "biota_spatial_split.csv")
 
 
+def _resolve_deepfish_dir() -> str:
+    env_df = os.getenv("DEEPFISH_DIR")
+    if env_df and Path(env_df).exists():
+        return env_df
+    candidates = [
+        DATA_DIR / "benchmarks" / "deepfish" / "DeepFish",
+        DATA_DIR / "benchmarks" / "deepfish",
+        DATA_DIR / "DeepFish",
+        REPO_ROOT / "DeepFish",
+        Path("/home/njan320/Neel/DeepFish"),
+        Path("/home/njan320/DeepFish"),
+    ]
+    for c in candidates:
+        if c.exists() and ((c / "Classification").exists() or (c / "train.csv").exists()):
+            return str(c.resolve())
+    return str((DATA_DIR / "benchmarks" / "deepfish").resolve())
+
+
 DEFAULT_PATHS = {
     "benthic_img_root": _resolve_img_root(),
     "substrate_csv": _find_file("substrate_depth_2_spatial_split.csv", ["benchmarks/substrate", "splits", ""]),
@@ -90,6 +108,7 @@ DEFAULT_PATHS = {
     "biota_csv": _resolve_biota_csv(),
     "coralmask_dir": _resolve_coralmask_dir(),
     "coralmask_test_manifest": _find_file("coralmask_test_clean.txt", ["benchmarks/coralmask", "manifests", ""]),
+    "deepfish_dir": _resolve_deepfish_dir(),
     "model_id": "facebook/dinov3-vits16-pretrain-lvd1689m",
     "results_dir": str(RESULTS_DIR),
 }
@@ -97,3 +116,4 @@ DEFAULT_PATHS = {
 # Official class labels matching Fig 7 & Fig 8 in the BenthicNet paper
 SUBSTRATE_CLASS_NAMES = ["Boulders", "Cobbles", "Rock", "Pebble/Gravel", "Sand/Mud (<2mm)"]
 GERMAN_BANK_CLASS_NAMES = ["silt/mud", "silt with bedforms", "reef", "glacial till", "sand with bedforms"]
+DEEPFISH_CLASS_NAMES = ["No-Fish", "Fish"]
