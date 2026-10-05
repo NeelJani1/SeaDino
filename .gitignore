@@ -55,6 +55,9 @@ wandb/
 *.hdf5
 ssl_pretrain_shards/
 shards/
+data/benchmarks/deepfish/DeepFish/
+data/benchmarks/deepfish/*.tar*
+DeepFish/
 
 # Heavy Binary Caches & Diagnostic Arrays
 *.npz
