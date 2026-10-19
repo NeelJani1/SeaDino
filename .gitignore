@@ -27,6 +27,7 @@ ENV/
 *.swo
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # Model Checkpoints & Large Weights
 *.ckpt
@@ -55,8 +56,14 @@ wandb/
 *.hdf5
 ssl_pretrain_shards/
 shards/
+env_gdrive.sh
 data/benchmarks/deepfish/DeepFish/
 data/benchmarks/deepfish/*.tar*
+data/benchmarks/fathomnet/images/
+data/benchmarks/fathomnet/*.jpg
+data/benchmarks/brackish/train/
+data/benchmarks/brackish/val/
+data/benchmarks/brackish/test/
 DeepFish/
 
 # Heavy Binary Caches & Diagnostic Arrays
@@ -94,5 +101,6 @@ docs/
 biota_spatial_split.csv
 substrate_depth_2_data_*.csv
 **/biota_spatial_split.csv
+**/biota_spatial_split_available_*.csv
 **/substrate_depth_2_data_*.csv
 

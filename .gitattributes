@@ -1,0 +1,2 @@
+# Explicit split manifests are immutable; preserve their recorded SHA256 bytes.
+data/benchmarks/splits/**/*.csv -text
