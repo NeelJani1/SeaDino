@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/zhengziqiang/MarineInst",
+  "revision": "62a5cba254b52339ac93cfd0293b8b6bc820b46b",
+  "files": {
+    "image_encoder.py": "1665ada2902722c9a8cd566c840e324d623ef2b12f7d9ae9f38b24aed0e39886",
+    "common.py": "59a53bfa5d0a4d446df7f2bb57d2e95808b130601592b934600fb663d256ce17",
+    "LICENSE.txt": "1ad8f7b8a1b6558726361c9acc9394e8ba7ec2f671a9724a4f8546c6b3335bd3"
+  },
+  "modified": false
+}
