@@ -268,41 +268,15 @@ pip install -e .
 
 ---
 
-## Pretraining with SeaDino
+## Training implementation
 
-Pretraining streams WebDataset `.tar` shards via [`ssl_train.py`](ssl_train.py):
+This public repository provides the benchmark evaluation and feature-visualization
+code. The SSL training implementation and training launchers are maintained in the
+separate private **SeaDino-Core** repository. Run training from that checkout;
+this public package exposes the `seadino-eval` command only.
 
-```bash
-python ssl_train.py \
-    --use_webdataset \
-    --shard_dir /path/to/benthicnet_shards \
-    --output_dir ./checkpoints/seadino_vits16_stage1 \
-    --model_id facebook/dinov3-vits16-pretrain-lvd1689m \
-    --batch_size 32 \
-    --learning_rate 2e-4 \
-    --weight_decay_start 0.04 \
-    --global_crop_size 224 \
-    --local_crop_size 96 \
-    --num_global_crops 2 \
-    --num_local_crops 8 \
-    --marine_aug \
-    --benthic_norm \
-    --use_bf16 \
-    --epochs 15
-```
-
-### Key Pretraining Flags
-| Argument | Type | Default | Description |
-| :--- | :---: | :---: | :--- |
-| `--use_webdataset` | `flag` | `False` | Stream training data from tar shards via WebDataset |
-| `--shard_dir` | `str` | `None` | Directory containing WebDataset `.tar` shards |
-| `--data_dir` | `str` | `None` | Directory of raw image files (alternative to `--use_webdataset`) |
-| `--learning_rate` | `float` | `1e-4` | Peak learning rate (cosine decay with warm-up) |
-| `--weight_decay_start` | `float` | `0.04` | Initial AdamW weight decay (with `--wd_schedule constant` by default) |
-| `--marine_aug` | `flag` | `False` | Enable domain-specific underwater augmentations |
-| `--no_marine_physics_aug` | `flag` | `False` | Disable underwater optical physics transforms (ablation baseline) |
-| `--benthic_norm` | `flag` | `False` | Normalize using BenthicNet empirical channel statistics |
-| `--use_bf16` | `flag` | `False` | Enable native `bfloat16` mixed precision |
+See [feature_visualization/README.md](feature_visualization/README.md) for the
+nine-backbone PCA, UMAP, t-SNE, patch-feature, and attention-map explorer.
 
 ---
 
@@ -362,7 +336,7 @@ SeaDino/
 ├── pyproject.toml                     # Modern package and CLI configuration
 ├── .gitignore                         # Strict rules preventing checkpoint/data leaks
 │
-├── ssl_train.py                       # Core DINOv3 Marine SSL Pretraining Engine
+├── feature_visualization/             # Frozen backbone feature and attention reports
 ├── run_eval.py                        # Multi-dataset evaluation orchestrator
 │
 ├── eval_suite/                        # Modular benchmarking package

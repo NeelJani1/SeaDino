@@ -55,10 +55,9 @@ dependencies = [
 
 [project.scripts]
 seadino-eval = "run_eval:main"
-seadino-train = "ssl_train:main"
 
 [tool.setuptools]
-py-modules = ["ssl_train", "run_eval"]
+py-modules = ["run_eval"]
 
 [tool.setuptools.packages.find]
 include = ["eval_suite*"]

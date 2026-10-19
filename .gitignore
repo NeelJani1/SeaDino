@@ -104,3 +104,7 @@ substrate_depth_2_data_*.csv
 **/biota_spatial_split_available_*.csv
 **/substrate_depth_2_data_*.csv
 
+
+# Training implementation lives only in the private SeaDino-Core checkout.
+/ssl_train.py
+/scripts/train_vitb_1.3m.sh
