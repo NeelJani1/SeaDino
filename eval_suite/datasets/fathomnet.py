@@ -74,15 +74,17 @@ class FathomNetDataset(Dataset):
       - 'label': integer class ID
     """
 
-    def __init__(self, samples: List[Dict[str, Any]], transform=None, crop_margin: float = 0.05):
+    def __init__(self, samples: List[Dict[str, Any]], transform=None, crop_margin: float = 0.05, crop_boxes: bool = False, cache=None):
+        self.cache = cache
         self.samples = samples
         self.transform = transform
         self.crop_margin = crop_margin
+        self.crop_boxes = crop_boxes
 
     def __len__(self) -> int:
         return len(self.samples)
 
-    def _load_image(self, item: Dict[str, Any]) -> Image.Image:
+    def _load_uncached_image(self, item: Dict[str, Any]) -> Image.Image:
         raw = item.get("image")
         if isinstance(raw, Image.Image):
             img = raw.convert("RGB")
@@ -99,9 +101,9 @@ class FathomNetDataset(Dataset):
         else:
             raise ValueError(f"Unsupported image type: {type(raw)}")
 
-        # Crop bounding box if specified
+        # Crop bounding box only if requested
         bbox = item.get("bbox")
-        if bbox is not None:
+        if bbox is not None and self.crop_boxes:
             w, h = img.size
             xmin, ymin, xmax, ymax = _parse_bbox_xyxy(bbox, w, h)
             if self.crop_margin > 0:
@@ -117,6 +119,11 @@ class FathomNetDataset(Dataset):
                 img = img.crop((xmin, ymin, xmax, ymax))
 
         return img
+
+    def _load_image(self, item: Dict[str, Any]) -> Image.Image:
+        if self.cache is not None:
+            return self.cache.image(item, self._load_uncached_image, self.crop_boxes, self.crop_margin)
+        return self._load_uncached_image(item)
 
     def __getitem__(self, idx: int, retries: int = 0) -> Tuple[torch.Tensor, int]:
         if retries >= 10:
@@ -193,20 +200,74 @@ def prepare_fathomnet_data(
             else:
                 test_records.append(rec)
 
-    elif local_path.is_dir() and (local_path / "metadata.csv").exists():
+    elif local_path.is_dir():
         import pandas as pd
-        df = pd.read_csv(local_path / "metadata.csv")
-        img_col = next((c for c in ["file_name", "image", "image_path"] if c in df.columns), "file_name")
-        lbl_col = next((c for c in ["label", "concept", "category"] if c in df.columns), "label")
-        split_col = next((c for c in ["split", "partition"] if c in df.columns), None)
-        for _, r in df.iterrows():
-            img_file = local_path / str(r[img_col])
-            rec = {"image": str(img_file), "raw_label": str(r[lbl_col]), "bbox": None}
-            part = str(r[split_col]).lower() if split_col and pd.notna(r[split_col]) else "train"
-            if part in ["train", "training"]:
-                train_records.append(rec)
+        csv_cand = next((local_path / f for f in ["metadata.csv", "annotations.csv", "train.csv"] if (local_path / f).is_file()), None)
+        if csv_cand is not None:
+            df = pd.read_csv(csv_cand)
+            img_col = next((c for c in ["file_name", "image", "image_path", "filename"] if c in df.columns), "file_name")
+            lbl_col = next((c for c in ["label", "concept", "category", "class"] if c in df.columns), "label")
+            split_col = next((c for c in ["split", "partition"] if c in df.columns), None)
+            bbox_col = next((c for c in ["bbox", "bounding_box"] if c in df.columns), None)
+            for _, r in df.iterrows():
+                img_file = local_path / str(r[img_col])
+                bbox_val = None
+                if bbox_col and pd.notna(r[bbox_col]):
+                    try:
+                        bbox_val = ast.literal_eval(str(r[bbox_col]))
+                    except Exception:
+                        pass
+                rec = {"image": str(img_file), "raw_label": str(r[lbl_col]), "bbox": bbox_val}
+                part = str(r[split_col]).lower() if split_col and pd.notna(r[split_col]) else "train"
+                if part in ["train", "training"]:
+                    train_records.append(rec)
+                else:
+                    test_records.append(rec)
+
+            if not test_records and train_records:
+                print("  [FathomNet] Metadata has single split; creating deterministic 80/20 train/test split...")
+                random.seed(seed)
+                random.shuffle(train_records)
+                s_idx = int(0.8 * len(train_records))
+                test_records = train_records[s_idx:]
+                train_records = train_records[:s_idx]
+            elif not train_records and test_records:
+                random.seed(seed)
+                random.shuffle(test_records)
+                s_idx = int(0.8 * len(test_records))
+                train_records = test_records[:s_idx]
+                test_records = test_records[s_idx:]
+        else:
+            # Check for ImageFolder style (train/<class> or <class> folders)
+            def _scan_class_dirs(base_d: Path):
+                recs = []
+                for cd in base_d.iterdir():
+                    if cd.is_dir() and not cd.name.startswith("."):
+                        for ext in ["*.jpg", "*.jpeg", "*.png"]:
+                            for img_f in cd.glob(ext):
+                                recs.append({"image": str(img_f.resolve()), "raw_label": cd.name, "bbox": None})
+                return recs
+
+            if (local_path / "train").is_dir():
+                train_records = _scan_class_dirs(local_path / "train")
+                test_dir = local_path / "test" if (local_path / "test").is_dir() else local_path / "val"
+                if test_dir.is_dir():
+                    test_records = _scan_class_dirs(test_dir)
             else:
-                test_records.append(rec)
+                flat_recs = _scan_class_dirs(local_path)
+                if flat_recs:
+                    random.seed(seed)
+                    random.shuffle(flat_recs)
+                    s_idx = int(0.8 * len(flat_recs))
+                    train_records = flat_recs[:s_idx]
+                    test_records = flat_recs[s_idx:]
+
+            if not train_records and not test_records:
+                raise FileNotFoundError(
+                    f"Local directory '{local_path}' contains no FathomNet data files or class folders.\n"
+                    f"To download and crop FathomNet benthic organism images to G-Drive, run:\n"
+                    f"  python scripts/download_fathomnet.py --dest_dir {local_path}\n"
+                )
 
     else:
         # Load from Hugging Face Hub
@@ -219,9 +280,11 @@ def prepare_fathomnet_data(
         try:
             ds_dict = load_dataset(repo_or_dir)
         except Exception as e:
-            # Fallback attempt with specific configuration or revision
-            print(f"  [FathomNet] Direct load error: {e}. Attempting fallback...")
-            ds_dict = load_dataset(repo_or_dir, trust_remote_code=True)
+            raise RuntimeError(
+                f"Failed to load FathomNet dataset '{repo_or_dir}' from Hugging Face Hub: {e}\n"
+                f"To download and prepare local crops directly onto G-Drive, run:\n"
+                f"  python scripts/download_fathomnet.py"
+            ) from e
 
         available_splits = list(ds_dict.keys())
         print(f"  [FathomNet] Available splits: {available_splits}")

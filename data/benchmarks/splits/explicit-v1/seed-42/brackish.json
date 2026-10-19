@@ -1,0 +1,55 @@
+{
+  "source": "/mnt/g/data/benchmarks/brackish/metadata.csv",
+  "grouping": "video clip blocks (60-second gap)",
+  "nominal_fractions": {
+    "train": 0.7,
+    "validation": 0.1,
+    "test": 0.2
+  },
+  "image_only_group_fallbacks": 0,
+  "official_test": false,
+  "history": "New local grouped protocol; not comparable to legacy partitions and not a pristine unseen historical test.",
+  "protocol": "explicit-v1",
+  "seed": 42,
+  "manifest_hash": "839bb3f0277b56a23375659b0216a574caf0c8d00c5ffdcbb0339c9d12c315cd",
+  "class_names": [
+    "crab",
+    "fish",
+    "jellyfish",
+    "shrimp",
+    "small_fish",
+    "starfish"
+  ],
+  "counts": {
+    "test": 476,
+    "train": 1430,
+    "validation": 111
+  },
+  "class_support": {
+    "train": {
+      "crab": 610,
+      "fish": 332,
+      "jellyfish": 0,
+      "shrimp": 22,
+      "small_fish": 103,
+      "starfish": 363
+    },
+    "validation": {
+      "crab": 22,
+      "fish": 30,
+      "jellyfish": 0,
+      "shrimp": 8,
+      "small_fish": 16,
+      "starfish": 35
+    },
+    "test": {
+      "crab": 274,
+      "fish": 57,
+      "jellyfish": 0,
+      "shrimp": 7,
+      "small_fish": 23,
+      "starfish": 115
+    }
+  },
+  "csv_sha256": "27e31e608f9eacd370a767da53b7da3a5640ce351c29f366f9924d3a3b8d4b92"
+}

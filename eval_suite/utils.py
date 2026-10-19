@@ -71,8 +71,9 @@ def gpu_bicubic_preprocess(
 def plot_and_save_confusion_matrix(cm_norm: np.ndarray, class_names: List[str], save_path: str, title: str):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.figure(figsize=(7, 6))
+    cm_clean = np.nan_to_num(cm_norm, nan=0.0)
     sns.heatmap(
-        cm_norm, annot=True, fmt=".1f", cmap="Blues", cbar=True,
+        cm_clean, annot=True, fmt=".1f", cmap="Blues", cbar=True,
         xticklabels=class_names, yticklabels=class_names,
         annot_kws={"size": 11, "weight": "bold"}, vmin=0, vmax=100
     )

@@ -1,4 +1,4 @@
-"""Instant in-memory Biota dataset loader with fault-tolerant fetching."""
+"""In-memory Biota loader that fails visibly on missing benchmark images."""
 
 import ast
 from typing import List, Tuple
@@ -35,7 +35,7 @@ class BiotaDataset(Dataset):
                     img.load()
                     img = img.convert("RGB")
             except Exception:
-                return self.__getitem__((idx + 1) % len(self.samples), retries=retries + 1)
+                raise FileNotFoundError(f"Unreadable Biota image: {path}; refusing to substitute another sample")
 
         if self.transform is not None:
             img = self.transform(img)

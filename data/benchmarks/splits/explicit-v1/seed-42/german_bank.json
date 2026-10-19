@@ -1,0 +1,52 @@
+{
+  "source": "/mnt/g/data/benchmarks/german_bank/german_bank_2010_spatial_split.csv",
+  "grouping": "dataset/site for train-validation; original spatial test retained",
+  "spatial_buffer_m": 50,
+  "minimum_distances_m": {
+    "train_to_validation": 4628.195203761613,
+    "train_to_test": 50.20110379651668,
+    "validation_to_test": 51.35995806035181
+  },
+  "original_test_preserved": true,
+  "history": "Existing test scores have already been inspected.",
+  "protocol": "explicit-v1",
+  "seed": 42,
+  "manifest_hash": "b1e28db41a8782a401334e4d95c70e489d7871e9a4dd4b93867a6a319ca5827b",
+  "class_names": [
+    "silt/mud",
+    "silt with bedforms",
+    "reef",
+    "glacial till",
+    "sand with bedforms"
+  ],
+  "counts": {
+    "validation": 249,
+    "train": 2061,
+    "test": 638,
+    "dropped": 233
+  },
+  "class_support": {
+    "train": {
+      "silt/mud": 488,
+      "silt with bedforms": 155,
+      "reef": 424,
+      "glacial till": 497,
+      "sand with bedforms": 497
+    },
+    "validation": {
+      "silt/mud": 73,
+      "silt with bedforms": 32,
+      "reef": 34,
+      "glacial till": 49,
+      "sand with bedforms": 61
+    },
+    "test": {
+      "silt/mud": 206,
+      "silt with bedforms": 19,
+      "reef": 124,
+      "glacial till": 161,
+      "sand with bedforms": 128
+    }
+  },
+  "csv_sha256": "1333bbdf199a32863e1f3a08329a6c52741c04b4a939a2d621e897f61bcea787"
+}

@@ -1,0 +1,52 @@
+{
+  "source": "/mnt/g/data/benchmarks/substrate/substrate_depth_2_spatial_split.csv",
+  "grouping": "dataset/site for train-validation; original spatial test retained",
+  "spatial_buffer_m": 100,
+  "minimum_distances_m": {
+    "train_to_validation": 100.04842778974908,
+    "train_to_test": 100.01691729248437,
+    "validation_to_test": 100.08852694544532
+  },
+  "original_test_preserved": true,
+  "history": "Existing test scores have already been inspected.",
+  "protocol": "explicit-v1",
+  "seed": 42,
+  "manifest_hash": "56562d398c4c52c9501cc64b0caa270d88bb46b153c7138c820199a405da41b7",
+  "class_names": [
+    "Boulders",
+    "Cobbles",
+    "Rock",
+    "Pebble/Gravel",
+    "Sand/Mud (<2mm)"
+  ],
+  "counts": {
+    "test": 15141,
+    "dropped": 24895,
+    "train": 31677,
+    "validation": 3811
+  },
+  "class_support": {
+    "train": {
+      "Boulders": 2846,
+      "Cobbles": 2781,
+      "Rock": 3932,
+      "Pebble/Gravel": 3685,
+      "Sand/Mud (<2mm)": 18433
+    },
+    "validation": {
+      "Boulders": 292,
+      "Cobbles": 304,
+      "Rock": 442,
+      "Pebble/Gravel": 421,
+      "Sand/Mud (<2mm)": 2352
+    },
+    "test": {
+      "Boulders": 751,
+      "Cobbles": 1075,
+      "Rock": 1582,
+      "Pebble/Gravel": 1072,
+      "Sand/Mud (<2mm)": 10661
+    }
+  },
+  "csv_sha256": "801f6c2e8b96431c5c32b582ec574a550d4b3cdbf2eec32bd323cda63829d3a6"
+}

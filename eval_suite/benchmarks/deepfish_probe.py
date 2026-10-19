@@ -75,7 +75,10 @@ def evaluate_deepfish(
         feats, targets = [], []
         for images, y in tqdm(loader, desc=f"      Extracting {desc}", leave=False):
             images = images.to(device=device, dtype=dtype, non_blocking=True)
-            out = model(images)
+            try:
+                out = model(images, interpolate_pos_encoding=True)
+            except TypeError:
+                out = model(images)
             f = out.last_hidden_state[:, 0] if hasattr(out, "last_hidden_state") else out[0][:, 0]
             feats.append(F.normalize(f.float(), dim=-1, p=2).cpu())
             targets.append(y)

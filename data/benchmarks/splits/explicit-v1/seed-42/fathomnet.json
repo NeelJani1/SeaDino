@@ -1,0 +1,47 @@
+{
+  "source": "/mnt/g/data/benchmarks/fathomnet/metadata.csv",
+  "grouping": "source URL directory / sequence identifier",
+  "nominal_fractions": {
+    "train": 0.7,
+    "validation": 0.1,
+    "test": 0.2
+  },
+  "image_only_group_fallbacks": 0,
+  "official_test": false,
+  "history": "New local grouped protocol; not comparable to legacy partitions and not a pristine unseen historical test.",
+  "protocol": "explicit-v1",
+  "seed": 42,
+  "manifest_hash": "51fdd72630e2b49485196a7837cabbdd2e6a4216e5d1764c8efd7137c52dcc3b",
+  "class_names": [
+    "coral",
+    "crinoid",
+    "fish",
+    "sponge"
+  ],
+  "counts": {
+    "train": 16921,
+    "test": 4477,
+    "validation": 2238
+  },
+  "class_support": {
+    "train": {
+      "coral": 2185,
+      "crinoid": 914,
+      "fish": 11336,
+      "sponge": 2486
+    },
+    "validation": {
+      "coral": 311,
+      "crinoid": 130,
+      "fish": 1444,
+      "sponge": 353
+    },
+    "test": {
+      "coral": 622,
+      "crinoid": 260,
+      "fish": 2889,
+      "sponge": 706
+    }
+  },
+  "csv_sha256": "58b3d8aac93fb2de14299cd9ae1b0854ee4410f6a3fc2927ac26c2ea1e33ebe5"
+}

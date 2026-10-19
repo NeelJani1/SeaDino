@@ -1,6 +1,7 @@
 """FathomNet benchmark probe runner (k-NN + Linear Probe with Bicubic Transforms)."""
 
 import gc
+import time
 from typing import Dict, List, Optional
 import numpy as np
 from sklearn.metrics import confusion_matrix, f1_score
@@ -12,6 +13,7 @@ from tqdm import tqdm
 
 from eval_suite.datasets.fathomnet import FathomNetDataset
 from eval_suite.utils import seed_worker, set_seed
+from eval_suite.fathomnet_cache import make_fathomnet_cache
 
 
 def evaluate_fathomnet(
@@ -28,6 +30,9 @@ def evaluate_fathomnet(
     epochs: int = 20,
     k: int = 20,
     temp: float = 0.07,
+    crop_boxes: bool = False,
+    cache_enabled: bool = True,
+    cache_dir: Optional[str] = None,
 ) -> Dict[str, float]:
     """Evaluates representation quality on FathomNet via k-NN and Linear Probing.
 
@@ -45,6 +50,7 @@ def evaluate_fathomnet(
       epochs: Linear probe training epochs (default: 20)
       k: Number of nearest neighbors (default: 20)
       temp: Cosine similarity temperature for k-NN weights (default: 0.07)
+      crop_boxes: Whether to crop bounding boxes or evaluate full original frames
 
     Returns:
       Dict with accuracy and Macro-F1 for both k-NN and Linear Probe,
@@ -53,8 +59,9 @@ def evaluate_fathomnet(
     set_seed(seed)
     g = torch.Generator().manual_seed(seed)
 
-    train_ds = FathomNetDataset(train_samples, transform=transform)
-    test_ds = FathomNetDataset(test_samples, transform=transform)
+    cache = make_fathomnet_cache(train_samples + test_samples, transform, cache_dir, cache_enabled)
+    train_ds = FathomNetDataset(train_samples, transform=transform, crop_boxes=crop_boxes, cache=cache)
+    test_ds = FathomNetDataset(test_samples, transform=transform, crop_boxes=crop_boxes, cache=cache)
 
     loader_kwargs = {"pin_memory": True}
     if num_workers > 0:
@@ -73,19 +80,35 @@ def evaluate_fathomnet(
     # 1. Feature Extraction (CLS tokens, L2-normalized)
     @torch.no_grad()
     def _extract_features(loader, desc="FathomNet"):
+        started = time.perf_counter()
+        feature_path = cache.feature_path(model, loader.dataset.samples, crop_boxes, device, dtype, batch_size, 'legacy') if cache else None
+        saved = cache.load_features(feature_path, loader.dataset.samples, desc) if cache else None
+        if saved is not None:
+            return saved
         feats, targets = [], []
+        waiting, previous = 0., time.perf_counter()
         for images, y in tqdm(loader, desc=f"      Extracting {desc}", leave=False):
+            waiting += time.perf_counter() - previous
             images = images.to(device=device, dtype=dtype, non_blocking=True)
-            out = model(images)
+            try:
+                out = model(images, interpolate_pos_encoding=True)
+            except TypeError:
+                out = model(images)
             f = out.last_hidden_state[:, 0] if hasattr(out, "last_hidden_state") else out[0][:, 0]
             feats.append(F.normalize(f.float(), dim=-1, p=2).cpu())
             targets.append(y)
-        return torch.cat(feats, dim=0), torch.cat(targets, dim=0)
+            previous = time.perf_counter()
+        features, labels = torch.cat(feats, dim=0), torch.cat(targets, dim=0)
+        if cache:
+            cache.save_features(feature_path, features, labels)
+        print(f"      FathomNet {desc}: {time.perf_counter()-started:.2f}s total | image/batch wait {waiting:.2f}s")
+        return features, labels
 
     train_f, train_y = _extract_features(train_loader, desc=f"Train ({len(train_ds):,} crops)")
     test_f, test_y = _extract_features(test_loader, desc=f"Test ({len(test_ds):,} crops)")
 
     # 2. k-NN Probe Evaluation (Cosine similarity weighted)
+    knn_started = time.perf_counter()
     train_f_dev = train_f.to(device)
     train_y_dev = train_y.to(device)
     all_knn_preds = []
@@ -115,7 +138,10 @@ def evaluate_fathomnet(
         torch.cuda.empty_cache()
     gc.collect()
 
+    print(f"      FathomNet k-NN: {time.perf_counter()-knn_started:.2f}s")
+
     # 3. Linear Probe Evaluation
+    probe_started = time.perf_counter()
     set_seed(seed)
     feat_dim = train_f.size(1)
     linear = nn.Linear(feat_dim, num_classes).to(device)
@@ -147,7 +173,9 @@ def evaluate_fathomnet(
     lin_micro = f1_score(y_true, lin_preds, average="micro", zero_division=0) * 100.0
 
     cm_norm = confusion_matrix(y_true, lin_preds, labels=list(range(num_classes)), normalize="true") * 100.0
+    cm_norm = np.nan_to_num(cm_norm, nan=0.0)
 
+    print(f"      FathomNet linear probe ({epochs} epochs): {time.perf_counter()-probe_started:.2f}s")
     del train_f, train_y, test_f, test_y, linear, optimizer, probe_loader, tensor_ds
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
