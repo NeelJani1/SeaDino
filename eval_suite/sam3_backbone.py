@@ -9,7 +9,6 @@ import re
 
 import torch
 from torch import nn
-from transformers.modeling_outputs import BaseModelOutput
 
 
 SAM3_MODEL_ID = "facebook/sam3"
@@ -91,6 +90,7 @@ segmentation head. Encoder microbatches do not change probe optimizer batches.
                 raise RuntimeError(f"Unexpected SAM 3 patch layout: {tuple(patches.shape)}")
             pooled = patches.float().mean(dim=1, keepdim=True).to(patches.dtype)
             chunks.append(torch.cat((pooled, patches), dim=1))
+        from transformers.modeling_outputs import BaseModelOutput
         return BaseModelOutput(last_hidden_state=torch.cat(chunks, dim=0))
 
 

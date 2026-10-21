@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel, CLIPVisionModel
 
 BASELINE_MAP = {
     "sam3.1": "facebook/sam3.1",
@@ -161,6 +160,7 @@ def load_dinov3_backbone(
     attn_implementation: str = "sdpa",
 ):
     """Loads DINOv3 backbone from a .ckpt (EMA teacher) or raw Hugging Face baseline."""
+    from transformers import AutoModel
     model = AutoModel.from_pretrained(model_id, attn_implementation=attn_implementation, dtype=dtype)
     epoch, train_loss = None, None
     benthic_norm = False
@@ -192,6 +192,7 @@ def load_baseline_backbone(
 ):
     """Loads comparative frozen image-encoder backbones, including SAM 3."""
     canonical_id = BASELINE_MAP.get(model_name.lower().strip(), model_name)
+    from transformers import AutoModel, CLIPVisionModel
     print(f"  [Baseline Loader] Loading foundation baseline '{canonical_id}'...")
 
     if canonical_id == "marineinst-vit-h-stage1":
@@ -279,7 +280,12 @@ class LinearSegmenter(nn.Module):
 
         with torch.no_grad():
             outputs = self.backbone(x_in)
-            tokens = outputs.last_hidden_state if hasattr(outputs, "last_hidden_state") else outputs[0]
+            if hasattr(outputs, "last_hidden_state"):
+                tokens = outputs.last_hidden_state
+            elif isinstance(outputs, dict) and "last_hidden_state" in outputs:
+                tokens = outputs["last_hidden_state"]
+            else:
+                tokens = outputs[0]
 
             # Extract only spatial patch tokens (skipping [CLS] and register tokens)
             patch_tokens = tokens[:, -num_patches:, :]

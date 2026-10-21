@@ -123,7 +123,7 @@ To evaluate true generalization to unseen seafloor, SeaDino establishes spatial 
 Manifest files are located in `data/benchmarks/`:
 - [`substrate_depth_2_spatial_split.csv`](data/benchmarks/substrate/substrate_depth_2_spatial_split.csv)
 - [`german_bank_2010_spatial_split.csv`](data/benchmarks/german_bank/german_bank_2010_spatial_split.csv)
-- [`biota_spatial_split.csv`](data/benchmarks/biota/biota_spatial_split.csv)
+- [`biota_spatial_split_available_v1.audit.json`](data/benchmarks/biota/biota_spatial_split_available_v1.audit.json) *(Audit metadata and partition provenance for the external Biota spatial split CSV)*
 
 ### 3. Cross-Dataset Decontamination: CoralMask-Clean
 Perceptual hash auditing (pHash, 64-bit) of all 830 CoralMask test images against our 189,101 SSL pretraining shards revealed that **7 test images** were exact duplicates from Catlin Seaview Survey transects. A Hamming distance sweep ($d \in [0, 10]$) confirmed a clear plateau from $d=6$ to $d=9$ isolating the duplicates.
@@ -145,6 +145,8 @@ SeaDino provides:
 | **Coralscapes** | OOD *(Zero-Shot)* | Linear (mIoU) | 26.17% | 25.54% | **+0.63%** | 26.01% | 25.23% | **+0.78%** |
 | **CoralMask-Clean** | OOD *(Zero-Shot)* | Linear (Coral-IoU)| 72.87% | 72.70% | **+0.17%** | 73.03% | 72.68% | **+0.35%** |
 
+> *Historical result; exact run provenance unverified. The current legacy evaluator selects probe epoch using test mIoU, so these figures are not established as untouched final-test estimates.*
+
 > **Scientific Insight:** Optical physics augmentations deliver a universal, consistent improvement ($\mathbf{+0.6\text{ to }+1.1\text{ points}}$) across both ID classification and OOD dense segmentation, while preventing late-epoch representation drift.
 
 ---
@@ -161,6 +163,7 @@ SeaDino provides:
 | **5. Marine Augs + Physics + Pixel Loss** (`stage1_marine_with_physics`)| 50.82% | 54.09% | 74.21% *(+1.13 pt)* | 68.01% | **26.01%** | **73.03%** |
 
 *\*Note on CoralMask baseline: 72.60% reflects full deterministic linear probing across all epochs in the master sweep (scoring 54.19% under fast 6-epoch probing).*
+*\*Historical result; exact run provenance unverified. The current legacy evaluator selects probe epoch using test mIoU, so these figures are not established as untouched final-test estimates.*
 
 > **Scientific Insights (The Linear Probe vs. $k$-NN Paradigm):**
 > 1. **German Bank Linear Probe Superiority (Row 2 vs. Baseline):**

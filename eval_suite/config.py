@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import sys
 from typing import List, Optional
 
 # Base Paths
@@ -43,8 +44,9 @@ def detect_gdrive_root() -> Optional[Path]:
         if g_mount.is_dir():
             target = g_mount / "data"
             try:
-                target.mkdir(parents=True, exist_ok=True)
-                return target.resolve()
+                if target.is_dir():
+                    return target.resolve()
+                return target
             except (PermissionError, OSError):
                 pass
     except (PermissionError, OSError):
@@ -84,8 +86,9 @@ def _resolve_data_dir() -> Path:
 
     local_data = REPO_ROOT / "data"
     try:
-        local_data.mkdir(parents=True, exist_ok=True)
-        return local_data.resolve()
+        if local_data.is_dir():
+            return local_data.resolve()
+        return local_data
     except (PermissionError, OSError):
         return local_data
 
@@ -101,14 +104,73 @@ CHECKPOINTS_DIR = Path(
     )
 )
 
-# Redirect Hugging Face cache to external storage if G-drive is active
-if "HF_HOME" not in os.environ and ("mnt/g" in str(DATA_DIR) or os.getenv("GDRIVE_DATA_DIR")):
-    hf_cache = DATA_DIR / ".cache" / "huggingface"
-    try:
-        hf_cache.mkdir(parents=True, exist_ok=True)
-        os.environ["HF_HOME"] = str(hf_cache)
-    except (PermissionError, OSError):
-        pass
+
+def setup_hf_cache(data_dir: Optional[Path] = None):
+    """Configures HF cache directories on external storage if active and permitted,
+    preserving explicit cache variables (HF_HOME, HF_HUB_CACHE, TRANSFORMERS_CACHE)."""
+    target_data_dir = data_dir or DATA_DIR
+    if "mnt/g" in str(target_data_dir) or os.getenv("GDRIVE_DATA_DIR"):
+        has_home_override = "HF_HOME" in os.environ
+        has_hub_override = "HF_HUB_CACHE" in os.environ or "HUGGINGFACE_HUB_CACHE" in os.environ
+        has_trans_override = "TRANSFORMERS_CACHE" in os.environ
+
+        if has_home_override:
+            return
+
+        set_home = not has_home_override
+        set_hub = not has_hub_override
+        set_trans = not has_trans_override and not has_hub_override
+
+        if not (set_home or set_hub or set_trans):
+            return
+
+        hf_cache = target_data_dir / ".cache" / "huggingface"
+        hf_hub = hf_cache / "hub"
+        try:
+            hf_cache_str = str(hf_cache)
+            hf_hub_str = str(hf_hub)
+
+            if set_home:
+                hf_cache.mkdir(parents=True, exist_ok=True)
+                os.environ["HF_HOME"] = hf_cache_str
+            if set_hub:
+                hf_hub.mkdir(parents=True, exist_ok=True)
+                os.environ["HF_HUB_CACHE"] = hf_hub_str
+            if set_trans:
+                os.environ["TRANSFORMERS_CACHE"] = hf_hub_str
+
+            effective_hub = os.environ.get("HF_HUB_CACHE") or os.environ.get("HUGGINGFACE_HUB_CACHE") or (hf_hub_str if set_hub else None)
+            effective_home = os.environ.get("HF_HOME") or (hf_cache_str if set_home else None)
+            effective_trans = os.environ.get("TRANSFORMERS_CACHE") or (hf_hub_str if set_trans else None)
+
+            # Update huggingface_hub constants if already imported or if constants module is active
+            if "huggingface_hub.constants" in sys.modules:
+                c = sys.modules["huggingface_hub.constants"]
+                if effective_home and hasattr(c, "HF_HOME"):
+                    c.HF_HOME = effective_home
+                if effective_hub:
+                    if hasattr(c, "HF_HUB_CACHE"):
+                        c.HF_HUB_CACHE = effective_hub
+                    if hasattr(c, "HUGGINGFACE_HUB_CACHE"):
+                        c.HUGGINGFACE_HUB_CACHE = effective_hub
+                if hasattr(c, "default_cache_path") and set_home:
+                    c.default_cache_path = os.path.join(hf_cache_str, "hub")
+            if "huggingface_hub" in sys.modules:
+                hh = sys.modules["huggingface_hub"]
+                if hasattr(hh, "constants"):
+                    if effective_home and hasattr(hh.constants, "HF_HOME"):
+                        hh.constants.HF_HOME = effective_home
+                    if effective_hub:
+                        if hasattr(hh.constants, "HF_HUB_CACHE"):
+                            hh.constants.HF_HUB_CACHE = effective_hub
+                        if hasattr(hh.constants, "HUGGINGFACE_HUB_CACHE"):
+                            hh.constants.HUGGINGFACE_HUB_CACHE = effective_hub
+            if "transformers.utils.hub" in sys.modules and effective_trans:
+                t = sys.modules["transformers.utils.hub"]
+                if hasattr(t, "TRANSFORMERS_CACHE"):
+                    t.TRANSFORMERS_CACHE = effective_trans
+        except (PermissionError, OSError):
+            pass
 
 # Normalization parameters
 IMAGENET_MEAN = [0.485, 0.456, 0.406]

@@ -53,6 +53,12 @@ dependencies = [
     "colorama>=0.4.6",
 ]
 
+[project.optional-dependencies]
+visualization = [
+    "umap-learn>=0.5.5",
+    "plotly>=5.18.0",
+]
+
 [project.scripts]
 seadino-eval = "run_eval:main"
 
@@ -60,4 +66,8 @@ seadino-eval = "run_eval:main"
 py-modules = ["run_eval"]
 
 [tool.setuptools.packages.find]
-include = ["eval_suite*"]
+include = ["eval_suite*", "feature_visualization*"]
+
+[tool.setuptools.package-data]
+feature_visualization = ["models.json"]
+"eval_suite.vendor.marineinst" = ["LICENSE.txt", "provenance.json"]

@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import torch
 from torch import nn
 from torch.nn import functional as F
-from transformers.modeling_outputs import BaseModelOutput
 
 from eval_suite.vendor.marineinst.image_encoder import ImageEncoderViT
 
@@ -78,6 +77,7 @@ unchanged. Native relative-position interpolation remains in the upstream code.
             patches = features.reshape(len(images), -1, self.hidden_size)
             pooled = patches.float().mean(1, keepdim=True).to(patches.dtype)
             outputs.append(torch.cat((pooled, patches), dim=1))
+        from transformers.modeling_outputs import BaseModelOutput
         return BaseModelOutput(last_hidden_state=torch.cat(outputs, dim=0))
 
 
